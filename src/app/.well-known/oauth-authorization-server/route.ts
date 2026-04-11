@@ -5,8 +5,8 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     issuer: origin,
-    authorization_endpoint: `${origin}/authorize`,
-    token_endpoint: `${origin}/token`,
+    authorization_endpoint: `${origin}/api/oauth/authorize`,
+    token_endpoint: `${origin}/api/oauth/token`,
     response_types_supported: ["code"],
     grant_types_supported: ["authorization_code", "client_credentials"],
     code_challenge_methods_supported: ["S256"],
