@@ -6,7 +6,7 @@ import { Bug, Code2, PanelLeft, Plus, ShieldCheck } from "lucide-react";
 
 /** Parse SSE response body into a stream of UIMessageChunk objects */
 function sseToJsonStream(body: ReadableStream<Uint8Array>): ReadableStream<UIMessageChunk> {
-  const textStream = body.pipeThrough(new TextDecoderStream());
+  const textStream = body.pipeThrough(new TextDecoderStream() as unknown as ReadableWritablePair<string, Uint8Array>);
   let buffer = "";
   return textStream.pipeThrough(
     new TransformStream<string, UIMessageChunk>({
