@@ -83,9 +83,14 @@ export interface DashboardStats {
   recent_leads?: Lead[];
 }
 
+export interface SMSResponseMessage {
+  text: string;
+  delay_ms: number;
+}
+
 export interface InboundResponse {
   conversation_id: number;
-  messages: Message[];
+  messages: SMSResponseMessage[];
 }
 
 export interface CarFilters {

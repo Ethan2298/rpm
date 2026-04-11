@@ -1,18 +1,20 @@
+import { Badge } from '@/components/ui/badge';
+
 interface LeadScoreBadgeProps {
   score: number;
 }
 
 export default function LeadScoreBadge({ score }: LeadScoreBadgeProps) {
-  let colorClass = 'bg-red-700 text-red-200';
-  if (score >= 7) {
-    colorClass = 'bg-green-700 text-green-200';
-  } else if (score >= 4) {
-    colorClass = 'bg-amber-700 text-amber-200';
-  }
+  const colorClass =
+    score >= 7
+      ? 'bg-green-700/40 text-green-200 border-green-600/30'
+      : score >= 4
+      ? 'bg-amber-700/40 text-amber-200 border-amber-600/30'
+      : 'bg-red-700/40 text-red-200 border-red-600/30';
 
   return (
-    <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold ${colorClass}`}>
+    <Badge className={`inline-flex items-center justify-center w-8 h-8 md:w-7 md:h-7 rounded-full p-0 text-xs font-bold ${colorClass}`}>
       {score}
-    </span>
+    </Badge>
   );
 }

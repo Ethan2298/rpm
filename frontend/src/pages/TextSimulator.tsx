@@ -1,6 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
-import { sendMessage, getCars, type Car, type Message } from '../api/client';
-import ChatBubble from '../components/ChatBubble';
+import { sendMessage, getCars, type Car, type SMSResponseMessage } from '@/api/client';
+import ChatBubble from '@/components/ChatBubble';
+import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Separator } from '@/components/ui/separator';
+import { SendHorizonal, MessageSquare, RotateCcw, User } from 'lucide-react';
 
 interface DisplayMessage {
   content: string;
@@ -48,7 +54,6 @@ export default function TextSimulator() {
     const text = input.trim();
     if (!text || sending) return;
 
-    // Add user message
     const userMsg: DisplayMessage = {
       content: text,
       isUser: true,
@@ -63,17 +68,14 @@ export default function TextSimulator() {
       const carId = selectedCarId ? Number(selectedCarId) : undefined;
       const response = await sendMessage(phoneNumber, text, carId);
 
-      // Store conversation_id for continuity
       if (response.conversation_id) {
         setConversationId(response.conversation_id);
       }
 
-      // Clear car selection after first message
       if (selectedCarId) {
         setSelectedCarId('');
       }
 
-      // Display response messages with delays
       if (response.messages && response.messages.length > 0) {
         await displayMessagesWithDelays(response.messages);
       }
@@ -92,7 +94,7 @@ export default function TextSimulator() {
     }
   };
 
-  const displayMessagesWithDelays = async (responseMsgs: Message[]) => {
+  const displayMessagesWithDelays = async (responseMsgs: SMSResponseMessage[]) => {
     for (let i = 0; i < responseMsgs.length; i++) {
       const msg = responseMsgs[i];
       const delay = msg.delay_ms || 1000;
@@ -100,14 +102,13 @@ export default function TextSimulator() {
       await new Promise((resolve) => setTimeout(resolve, delay));
 
       const displayMsg: DisplayMessage = {
-        content: msg.content,
+        content: msg.text,
         isUser: false,
         timestamp: new Date().toISOString(),
       };
 
       setMessages((prev) => [...prev, displayMsg]);
 
-      // Keep typing indicator if more messages are coming
       if (i < responseMsgs.length - 1) {
         setTyping(true);
       } else {
@@ -124,110 +125,109 @@ export default function TextSimulator() {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-2rem)] max-h-[calc(100vh-2rem)]">
-      {/* Header */}
-      <div className="bg-charcoal-700 border border-charcoal-500 rounded-t-xl px-5 py-3 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-3">
-          {/* Phone avatar */}
-          <div className="w-10 h-10 rounded-full bg-charcoal-500 flex items-center justify-center">
-            <svg className="w-5 h-5 text-charcoal-300" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
-            </svg>
+    <div className="flex flex-col h-[calc(100dvh-4rem)] max-h-[calc(100dvh-4rem)] overflow-hidden">
+      <Card className="flex flex-col flex-1 overflow-hidden">
+        {/* Header */}
+        <div className="px-3 py-2.5 sm:px-6 sm:py-4 flex items-center justify-between shrink-0 gap-2">
+          <div className="flex items-center gap-2 sm:gap-4 min-w-0">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-secondary flex items-center justify-center shrink-0">
+              <User className="w-4 h-4 sm:w-5 sm:h-5 text-muted-foreground" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-foreground font-medium text-xs sm:text-sm truncate">{phoneNumber}</p>
+              <p className="text-muted-foreground text-[11px] sm:text-xs truncate">
+                {conversationId ? `Conversation #${conversationId}` : 'New conversation'}
+              </p>
+            </div>
           </div>
-          <div>
-            <p className="text-white font-medium text-sm">{phoneNumber}</p>
-            <p className="text-charcoal-300 text-xs">
-              {conversationId ? `Conversation #${conversationId}` : 'New conversation'}
-            </p>
+          <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
+            <select
+              value={selectedCarId}
+              onChange={(e) => setSelectedCarId(e.target.value)}
+              className="h-8 sm:h-8 rounded-lg border border-input bg-transparent px-1.5 sm:px-2.5 py-1 text-[11px] sm:text-xs dark:bg-input/30 max-w-[120px] sm:max-w-[220px]"
+            >
+              <option value="">Car...</option>
+              {cars.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.year} {c.make} {c.model} - ${c.price.toLocaleString()}
+                </option>
+              ))}
+            </select>
+            <Button variant="outline" size="sm" onClick={handleNewConversation} className="h-8 px-2 sm:px-3">
+              <RotateCcw className="w-3.5 h-3.5 sm:mr-1.5" />
+              <span className="hidden sm:inline">New Chat</span>
+            </Button>
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          {/* Car selector */}
-          <select
-            value={selectedCarId}
-            onChange={(e) => setSelectedCarId(e.target.value)}
-            className="bg-charcoal-800 border border-charcoal-500 rounded-lg px-3 py-1.5 text-white text-xs focus:outline-none focus:border-rpm-red max-w-[200px]"
-          >
-            <option value="">Text about a car...</option>
-            {cars.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.year} {c.make} {c.model} - ${c.price.toLocaleString()}
-              </option>
+
+        <Separator />
+
+        {/* Messages Area */}
+        <ScrollArea className="flex-1 min-h-0">
+          <div className="px-3 py-4 sm:px-8 sm:py-6">
+            {messages.length === 0 && !typing && (
+              <div className="flex flex-col items-center justify-center h-full min-h-[200px] sm:min-h-[300px] text-center px-4">
+                <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-secondary flex items-center justify-center mb-4 sm:mb-5">
+                  <MessageSquare className="w-6 h-6 sm:w-8 sm:h-8 text-muted-foreground/50" />
+                </div>
+                <p className="text-muted-foreground text-sm mb-1.5">Send a message to Marcus</p>
+                <p className="text-muted-foreground/60 text-xs">
+                  {selectedCarId ? 'Ask about the selected car' : 'Ask about collector cars, schedule a viewing, or just say hi'}
+                </p>
+              </div>
+            )}
+
+            {messages.map((msg, i) => (
+              <ChatBubble
+                key={i}
+                message={msg.content}
+                isUser={msg.isUser}
+                timestamp={msg.timestamp}
+              />
             ))}
-          </select>
-          <button
-            onClick={handleNewConversation}
-            className="px-3 py-1.5 bg-rpm-red hover:bg-rpm-red-dark text-white text-xs font-semibold rounded-lg transition-colors whitespace-nowrap"
-          >
-            New Conversation
-          </button>
-        </div>
-      </div>
 
-      {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto bg-charcoal-900 border-x border-charcoal-500 px-4 py-4">
-        {messages.length === 0 && !typing && (
-          <div className="flex flex-col items-center justify-center h-full text-center">
-            <div className="w-16 h-16 rounded-full bg-charcoal-700 flex items-center justify-center mb-4">
-              <svg className="w-8 h-8 text-charcoal-400" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 9h12v2H6V9zm8 5H6v-2h8v2zm4-6H6V6h12v2z"/>
-              </svg>
-            </div>
-            <p className="text-charcoal-400 text-sm mb-1">Send a message to Marcus</p>
-            <p className="text-charcoal-500 text-xs">
-              {selectedCarId ? 'Ask about the selected car' : 'Ask about collector cars, schedule a viewing, or just say hi'}
-            </p>
+            {/* Typing Indicator */}
+            {typing && (
+              <div className="flex justify-start mb-3 sm:mb-4">
+                <div className="bg-secondary rounded-2xl rounded-bl-md px-3.5 py-2.5 sm:px-5 sm:py-3 flex items-center gap-1.5 sm:gap-2">
+                  <span className="text-muted-foreground text-xs">Marcus is typing</span>
+                  <span className="typing-dot"></span>
+                  <span className="typing-dot"></span>
+                  <span className="typing-dot"></span>
+                </div>
+              </div>
+            )}
+
+            <div ref={messagesEndRef} />
           </div>
-        )}
+        </ScrollArea>
 
-        {messages.map((msg, i) => (
-          <ChatBubble
-            key={i}
-            message={msg.content}
-            isUser={msg.isUser}
-            timestamp={msg.timestamp}
-          />
-        ))}
+        <Separator />
 
-        {/* Typing Indicator */}
-        {typing && (
-          <div className="flex justify-start mb-3">
-            <div className="bg-charcoal-600 rounded-2xl rounded-bl-md px-4 py-3 flex items-center gap-1">
-              <span className="text-charcoal-300 text-xs mr-2">Marcus is typing</span>
-              <span className="typing-dot"></span>
-              <span className="typing-dot"></span>
-              <span className="typing-dot"></span>
-            </div>
+        {/* Input Bar — sticky bottom, safe area aware */}
+        <div className="px-3 py-2.5 sm:px-6 sm:py-4 shrink-0 pb-[max(0.625rem,env(safe-area-inset-bottom))]">
+          <div className="flex items-center gap-2 sm:gap-4">
+            <Input
+              ref={inputRef}
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={selectedCarId ? 'Ask about this car...' : 'Type a message...'}
+              disabled={sending}
+              className="flex-1 rounded-full px-4 sm:px-5 py-2.5 h-11 sm:h-10 text-base sm:text-sm"
+            />
+            <Button
+              onClick={handleSend}
+              disabled={!input.trim() || sending}
+              size="icon"
+              className="rounded-full w-11 h-11 sm:w-10 sm:h-10 bg-primary hover:bg-rpm-red-dark text-primary-foreground shrink-0"
+            >
+              <SendHorizonal className="w-5 h-5" />
+            </Button>
           </div>
-        )}
-
-        <div ref={messagesEndRef} />
-      </div>
-
-      {/* Input Bar */}
-      <div className="bg-charcoal-700 border border-charcoal-500 border-t-0 rounded-b-xl px-4 py-3 shrink-0">
-        <div className="flex items-center gap-3">
-          <input
-            ref={inputRef}
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={selectedCarId ? 'Ask about this car...' : 'Type a message...'}
-            disabled={sending}
-            className="flex-1 bg-charcoal-800 border border-charcoal-500 rounded-full px-4 py-2.5 text-white text-sm placeholder-charcoal-400 focus:outline-none focus:border-rpm-red disabled:opacity-50"
-          />
-          <button
-            onClick={handleSend}
-            disabled={!input.trim() || sending}
-            className="w-10 h-10 bg-rpm-red hover:bg-rpm-red-dark disabled:bg-charcoal-500 disabled:cursor-not-allowed text-white rounded-full flex items-center justify-center transition-colors shrink-0"
-          >
-            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
-            </svg>
-          </button>
         </div>
-      </div>
+      </Card>
     </div>
   );
 }

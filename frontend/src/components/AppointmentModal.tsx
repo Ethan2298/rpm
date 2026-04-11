@@ -1,5 +1,16 @@
 import { useState, useEffect } from 'react';
-import { createAppointment, getCars, type Car } from '../api/client';
+import { createAppointment, getCars, type Car } from '@/api/client';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 
 interface AppointmentModalProps {
   isOpen: boolean;
@@ -23,8 +34,6 @@ export default function AppointmentModal({ isOpen, onClose, onCreated }: Appoint
     }
   }, [isOpen]);
 
-  if (!isOpen) return null;
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
@@ -47,97 +56,92 @@ export default function AppointmentModal({ isOpen, onClose, onCreated }: Appoint
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div
-        className="bg-charcoal-800 border border-charcoal-500 rounded-xl w-full max-w-md p-6"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h2 className="text-xl font-bold text-white mb-5">Book Appointment</h2>
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Book Appointment</DialogTitle>
+        </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm text-charcoal-300 mb-1">Car (optional)</label>
-            <select
-              value={carId}
-              onChange={(e) => setCarId(e.target.value)}
-              className="w-full bg-charcoal-700 border border-charcoal-500 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-rpm-red"
-            >
-              <option value="">Select a car...</option>
-              {cars.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.year} {c.make} {c.model}
-                </option>
-              ))}
-            </select>
-          </div>
+        <form onSubmit={handleSubmit}>
+          <div className="space-y-5 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="appt-car">Car (optional)</Label>
+              <select
+                id="appt-car"
+                value={carId}
+                onChange={(e) => setCarId(e.target.value)}
+                className="h-10 md:h-8 w-full rounded-lg border border-input bg-transparent px-2.5 py-1 text-base md:text-sm dark:bg-input/30"
+              >
+                <option value="">Select a car...</option>
+                {cars.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.year} {c.make} {c.model}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-          <div>
-            <label className="block text-sm text-charcoal-300 mb-1">Type</label>
-            <select
-              value={type}
-              onChange={(e) => setType(e.target.value as 'call' | 'visit' | 'video')}
-              className="w-full bg-charcoal-700 border border-charcoal-500 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-rpm-red"
-            >
-              <option value="visit">In-Person Visit</option>
-              <option value="call">Phone Call</option>
-              <option value="video">Video Call</option>
-            </select>
-          </div>
+            <div className="space-y-2">
+              <Label htmlFor="appt-type">Type</Label>
+              <select
+                id="appt-type"
+                value={type}
+                onChange={(e) => setType(e.target.value as 'call' | 'visit' | 'video')}
+                className="h-10 md:h-8 w-full rounded-lg border border-input bg-transparent px-2.5 py-1 text-base md:text-sm dark:bg-input/30"
+              >
+                <option value="visit">In-Person Visit</option>
+                <option value="call">Phone Call</option>
+                <option value="video">Video Call</option>
+              </select>
+            </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm text-charcoal-300 mb-1">Date</label>
-              <input
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                required
-                className="w-full bg-charcoal-700 border border-charcoal-500 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-rpm-red"
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="appt-date">Date</Label>
+                <Input
+                  id="appt-date"
+                  type="date"
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="appt-time">Time</Label>
+                <Input
+                  id="appt-time"
+                  type="time"
+                  value={time}
+                  onChange={(e) => setTime(e.target.value)}
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="appt-notes">Notes</Label>
+              <Textarea
+                id="appt-notes"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                rows={3}
+                placeholder="Any special requests..."
               />
             </div>
-            <div>
-              <label className="block text-sm text-charcoal-300 mb-1">Time</label>
-              <input
-                type="time"
-                value={time}
-                onChange={(e) => setTime(e.target.value)}
-                required
-                className="w-full bg-charcoal-700 border border-charcoal-500 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-rpm-red"
-              />
-            </div>
+
+            {error && <p className="text-destructive text-sm">{error}</p>}
           </div>
 
-          <div>
-            <label className="block text-sm text-charcoal-300 mb-1">Notes</label>
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              rows={3}
-              className="w-full bg-charcoal-700 border border-charcoal-500 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-rpm-red resize-none"
-              placeholder="Any special requests..."
-            />
-          </div>
-
-          {error && <p className="text-red-400 text-sm">{error}</p>}
-
-          <div className="flex justify-end gap-3 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-sm text-charcoal-300 hover:text-white transition-colors"
-            >
+          <DialogFooter>
+            <Button type="button" variant="ghost" onClick={onClose} className="min-h-[44px]">
               Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={submitting}
-              className="px-5 py-2 bg-rpm-red hover:bg-rpm-red-dark text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-50"
-            >
+            </Button>
+            <Button type="submit" disabled={submitting} className="bg-primary hover:bg-rpm-red-dark text-primary-foreground min-h-[44px]">
               {submitting ? 'Booking...' : 'Book Appointment'}
-            </button>
-          </div>
+            </Button>
+          </DialogFooter>
         </form>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

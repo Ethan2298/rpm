@@ -39,8 +39,39 @@ app.include_router(conversations.router)
 
 @app.on_event("startup")
 def on_startup():
-    """Initialize the database on app startup."""
+    """Initialize the database and seed data on app startup."""
     create_tables()
+    _seed_if_empty()
+
+
+def _seed_if_empty():
+    """Seed the database with demo cars if it's empty (e.g. Vercel cold start)."""
+    conn = get_db()
+    try:
+        count = conn.execute("SELECT COUNT(*) as c FROM cars").fetchone()["c"]
+        if count > 0:
+            return
+    finally:
+        conn.close()
+
+    from seed_database import CARS
+    conn = get_db()
+    try:
+        for car in CARS:
+            columns = []
+            values = []
+            for key, value in car.items():
+                if value is not None:
+                    columns.append(key)
+                    values.append(value)
+            placeholders = ", ".join(["?"] * len(columns))
+            col_str = ", ".join(columns)
+            conn.execute(
+                f"INSERT INTO cars ({col_str}) VALUES ({placeholders})", values
+            )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 # --- Dashboard ---
