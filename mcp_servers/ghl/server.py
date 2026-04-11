@@ -8,7 +8,7 @@ from mcp_servers.ghl.client import GHLAPIError, GHLClient
 
 mcp = FastMCP(
     "GoHighLevel CRM",
-    instructions="MCP server for GoHighLevel CRM - contacts, conversations, pipelines, opportunities, and appointments for Mikalyzed Auto Boutique.",
+    instructions="MCP server for GoHighLevel CRM - contacts, conversations, pipelines, opportunities, calendars, tasks, notes, and team management for Mikalyzed Auto Boutique. NOTE: Some write scopes are not yet enabled on the PIT token. If a tool returns a 403 with a required_scope hint, silently note it and move on — do NOT repeatedly warn the user or suggest they enable scopes. They already know and will enable them when ready.",
 )
 client = GHLClient()
 
@@ -17,10 +17,14 @@ VALID_WRITE_OPPORTUNITY_STATUSES = VALID_OPPORTUNITY_STATUSES - {"all"}
 VALID_MESSAGE_TYPES = {"SMS", "Email"}
 SCOPE_HINTS = {
     "contacts.write": "Enable the contacts.write scope on the GHL Private Integration token.",
+    "conversations.write": "Enable the conversations.write scope on the GHL Private Integration token.",
     "conversations/message.write": "Enable the conversations/message.write scope on the GHL Private Integration token.",
     "opportunities.write": "Enable the opportunities.write scope on the GHL Private Integration token.",
     "calendars.readonly": "Enable the calendars.readonly scope on the GHL Private Integration token.",
+    "calendars/events.readonly": "Enable the calendars/events.readonly scope on the GHL Private Integration token.",
     "calendars/events.write": "Enable the calendars/events.write scope on the GHL Private Integration token.",
+    "users.readonly": "Enable the users.readonly scope on the GHL Private Integration token.",
+    "workflows.readonly": "Enable the workflows.readonly scope on the GHL Private Integration token.",
 }
 
 
@@ -628,6 +632,412 @@ async def book_appointment(
         return _validation_error(str(e), field=field)
     except GHLAPIError as e:
         return _error(e, required_scope="calendars/events.write")
+
+
+# ── Contact edits ────────────────────────────────────────────────────────────
+
+
+@mcp.tool()
+async def update_contact(
+    contact_id: str,
+    first_name: str = "",
+    last_name: str = "",
+    phone: str = "",
+    email: str = "",
+    city: str = "",
+    state: str = "",
+    address: str = "",
+    postal_code: str = "",
+    assigned_to: str = "",
+    dnd: bool | None = None,
+    custom_fields: list[dict[str, str]] | None = None,
+) -> str:
+    """Update specific fields on an existing contact.
+
+    Args:
+        contact_id: The GHL contact ID to update.
+        first_name: Optional new first name.
+        last_name: Optional new last name.
+        phone: Optional new phone number.
+        email: Optional new email address.
+        city: Optional city.
+        state: Optional state.
+        address: Optional street address.
+        postal_code: Optional zip/postal code.
+        assigned_to: Optional user ID to assign the contact to.
+        dnd: Optional Do Not Disturb flag.
+        custom_fields: Optional list of custom field updates, each with 'id' and 'field_value' keys.
+    """
+    try:
+        body: dict[str, Any] = {}
+        if first_name:
+            body["firstName"] = first_name
+        if last_name:
+            body["lastName"] = last_name
+        if phone:
+            body["phone"] = phone
+        if email:
+            body["email"] = email
+        if city:
+            body["city"] = city
+        if state:
+            body["state"] = state
+        if address:
+            body["address1"] = address
+        if postal_code:
+            body["postalCode"] = postal_code
+        if assigned_to:
+            body["assignedTo"] = assigned_to
+        if dnd is not None:
+            body["dnd"] = dnd
+        if custom_fields:
+            body["customFields"] = custom_fields
+
+        if not body:
+            return _validation_error("At least one field must be provided to update.", field="contact_id")
+
+        data = await client.put(f"/contacts/{contact_id}", json=body)
+        return _success({"contact": data.get("contact", data)})
+    except GHLAPIError as e:
+        return _error(e, required_scope="contacts.write")
+
+
+@mcp.tool()
+async def delete_contact(contact_id: str) -> str:
+    """Permanently delete a contact from the CRM.
+
+    Args:
+        contact_id: The GHL contact ID to delete.
+    """
+    try:
+        data = await client.delete(f"/contacts/{contact_id}")
+        return _success({"deleted": True, "contactId": contact_id})
+    except GHLAPIError as e:
+        return _error(e, required_scope="contacts.write")
+
+
+# ── Contact notes ────────────────────────────────────────────────────────────
+
+
+@mcp.tool()
+async def get_contact_notes(contact_id: str) -> str:
+    """Get all notes attached to a contact.
+
+    Args:
+        contact_id: The GHL contact ID.
+    """
+    try:
+        data = await client.get(f"/contacts/{contact_id}/notes")
+        notes = data.get("notes", [])
+        return _success({"notes": notes, "count": len(notes)})
+    except GHLAPIError as e:
+        return _error(e)
+
+
+@mcp.tool()
+async def add_contact_note(contact_id: str, body: str) -> str:
+    """Add a note to a contact record.
+
+    Args:
+        contact_id: The GHL contact ID.
+        body: The note text.
+    """
+    try:
+        if not body.strip():
+            return _validation_error("body cannot be empty", field="body")
+        data = await client.post(f"/contacts/{contact_id}/notes", json={"body": body})
+        return _success({"note": data})
+    except GHLAPIError as e:
+        return _error(e, required_scope="contacts.write")
+
+
+# ── Contact tasks ────────────────────────────────────────────────────────────
+
+
+@mcp.tool()
+async def get_contact_tasks(contact_id: str) -> str:
+    """Get all tasks (follow-ups, to-dos) for a contact.
+
+    Args:
+        contact_id: The GHL contact ID.
+    """
+    try:
+        data = await client.get(f"/contacts/{contact_id}/tasks")
+        tasks = data.get("tasks", [])
+        return _success({"tasks": tasks, "count": len(tasks)})
+    except GHLAPIError as e:
+        return _error(e)
+
+
+@mcp.tool()
+async def create_contact_task(
+    contact_id: str,
+    title: str,
+    due_date: str,
+    description: str = "",
+    assigned_to: str = "",
+) -> str:
+    """Create a follow-up task for a contact.
+
+    Args:
+        contact_id: The GHL contact ID.
+        title: Task title.
+        due_date: Due date in ISO 8601 format with timezone offset.
+        description: Optional task description.
+        assigned_to: Optional user ID to assign the task to.
+    """
+    try:
+        if not title.strip():
+            return _validation_error("title cannot be empty", field="title")
+        normalized_due = _parse_iso8601_datetime(due_date, field="due_date")
+
+        body: dict[str, Any] = {"title": title, "dueDate": normalized_due}
+        if description:
+            body["description"] = description
+        if assigned_to:
+            body["assignedTo"] = assigned_to
+
+        data = await client.post(f"/contacts/{contact_id}/tasks", json=body)
+        return _success({"task": data})
+    except ValueError as e:
+        return _validation_error(str(e), field="due_date")
+    except GHLAPIError as e:
+        return _error(e, required_scope="contacts.write")
+
+
+# ── Conversation edits ───────────────────────────────────────────────────────
+
+
+@mcp.tool()
+async def update_conversation(
+    conversation_id: str,
+    starred: bool | None = None,
+    unread_count: int | None = None,
+) -> str:
+    """Update a conversation's metadata — star it, or mark read/unread.
+
+    Args:
+        conversation_id: The GHL conversation ID.
+        starred: Optional — set True to star, False to unstar.
+        unread_count: Optional — set to 0 to mark as read, or a positive int to mark unread.
+    """
+    try:
+        body: dict[str, Any] = {}
+        if starred is not None:
+            body["starred"] = starred
+        if unread_count is not None:
+            body["unreadCount"] = unread_count
+
+        if not body:
+            return _validation_error("At least one field must be provided: starred or unread_count.", field="conversation_id")
+
+        data = await client.put(f"/conversations/{conversation_id}", json=body)
+        return _success({"conversation": data})
+    except GHLAPIError as e:
+        return _error(e, required_scope="conversations.write")
+
+
+# ── Calendar reads ───────────────────────────────────────────────────────────
+
+
+@mcp.tool()
+async def get_calendar_events(
+    calendar_id: str = "",
+    start_time: str = "",
+    end_time: str = "",
+    user_id: str = "",
+    group_id: str = "",
+) -> str:
+    """Get calendar events/appointments.
+
+    At least one of calendar_id, user_id, or group_id is required.
+
+    Args:
+        calendar_id: Optional calendar ID to scope events.
+        start_time: Optional start of range in ISO 8601 format with timezone.
+        end_time: Optional end of range in ISO 8601 format with timezone.
+        user_id: Optional user ID to scope events to one team member.
+        group_id: Optional calendar group ID.
+    """
+    try:
+        if not any([calendar_id, user_id, group_id]):
+            return _validation_error(
+                "At least one of calendar_id, user_id, or group_id is required.",
+                field="calendar_id",
+            )
+
+        params: dict[str, Any] = {}
+        if calendar_id:
+            params["calendarId"] = calendar_id
+        if user_id:
+            params["userId"] = user_id
+        if group_id:
+            params["groupId"] = group_id
+        if start_time:
+            params["startTime"] = _parse_iso8601_datetime(start_time, field="start_time")
+        if end_time:
+            params["endTime"] = _parse_iso8601_datetime(end_time, field="end_time")
+
+        data = await client.get("/calendars/events", params)
+        events = data.get("events", data.get("data", []))
+        return _success({"events": events, "count": len(events)})
+    except ValueError as e:
+        field = "end_time" if "end_time" in str(e) else "start_time"
+        return _validation_error(str(e), field=field)
+    except GHLAPIError as e:
+        return _error(e, required_scope="calendars/events.readonly")
+
+
+@mcp.tool()
+async def get_calendar_free_slots(
+    calendar_id: str,
+    start_date: str,
+    end_date: str,
+    timezone: str = "America/New_York",
+) -> str:
+    """Get available time slots for a calendar. Use before booking to find open times.
+
+    Args:
+        calendar_id: The calendar ID from list_calendars.
+        start_date: Start date in YYYY-MM-DD format.
+        end_date: End date in YYYY-MM-DD format.
+        timezone: IANA timezone string. Defaults to America/New_York (Miami).
+    """
+    try:
+        params: dict[str, Any] = {
+            "startDate": start_date,
+            "endDate": end_date,
+            "timezone": timezone,
+            "calendarId": calendar_id,
+        }
+        data = await client.get(f"/calendars/{calendar_id}/free-slots", params)
+        slots = data.get("slots", data.get("data", data))
+        return _success({"slots": slots})
+    except GHLAPIError as e:
+        return _error(e, required_scope="calendars.readonly")
+
+
+# ── Calendar edits ───────────────────────────────────────────────────────────
+
+
+@mcp.tool()
+async def update_appointment(
+    event_id: str,
+    calendar_id: str,
+    start_time: str = "",
+    end_time: str = "",
+    title: str = "",
+    notes: str = "",
+    status: str = "",
+) -> str:
+    """Reschedule or modify an existing appointment.
+
+    Args:
+        event_id: The GHL event/appointment ID.
+        calendar_id: The calendar ID the appointment belongs to.
+        start_time: Optional new start time in ISO 8601 with timezone.
+        end_time: Optional new end time in ISO 8601 with timezone.
+        title: Optional new appointment title.
+        notes: Optional updated notes.
+        status: Optional status update (confirmed, cancelled, showed, noshow).
+    """
+    try:
+        body: dict[str, Any] = {"calendarId": calendar_id}
+        if start_time:
+            body["startTime"] = _parse_iso8601_datetime(start_time, field="start_time")
+        if end_time:
+            body["endTime"] = _parse_iso8601_datetime(end_time, field="end_time")
+        if title:
+            body["title"] = title
+        if notes:
+            body["notes"] = notes
+        if status:
+            body["status"] = status
+
+        if len(body) <= 1:
+            return _validation_error("At least one field must be provided to update.", field="event_id")
+
+        data = await client.put(f"/calendars/events/appointments/{event_id}", json=body)
+        return _success({"appointment": data})
+    except ValueError as e:
+        field = "end_time" if "end_time" in str(e) else "start_time"
+        return _validation_error(str(e), field=field)
+    except GHLAPIError as e:
+        return _error(e, required_scope="calendars/events.write")
+
+
+@mcp.tool()
+async def delete_appointment(event_id: str) -> str:
+    """Cancel and delete an appointment.
+
+    Args:
+        event_id: The GHL event/appointment ID to delete.
+    """
+    try:
+        data = await client.delete(f"/calendars/events/appointments/{event_id}")
+        return _success({"deleted": True, "eventId": event_id})
+    except GHLAPIError as e:
+        return _error(e, required_scope="calendars/events.write")
+
+
+# ── Opportunity edits ────────────────────────────────────────────────────────
+
+
+@mcp.tool()
+async def delete_opportunity(opportunity_id: str) -> str:
+    """Permanently delete an opportunity/deal.
+
+    Args:
+        opportunity_id: The GHL opportunity ID to delete.
+    """
+    try:
+        data = await client.delete(f"/opportunities/{opportunity_id}")
+        return _success({"deleted": True, "opportunityId": opportunity_id})
+    except GHLAPIError as e:
+        return _error(e, required_scope="opportunities.write")
+
+
+# ── Users ────────────────────────────────────────────────────────────────────
+
+
+@mcp.tool()
+async def get_users() -> str:
+    """Get all team members/users for the current location.
+
+    Use this to look up user IDs for assigning contacts, tasks, or appointments.
+    """
+    try:
+        data = await client.get("/users/")
+        users = []
+        for user in data.get("users", []):
+            users.append(
+                {
+                    "id": user.get("id"),
+                    "name": user.get("name"),
+                    "firstName": user.get("firstName"),
+                    "lastName": user.get("lastName"),
+                    "email": user.get("email"),
+                    "phone": user.get("phone"),
+                    "role": user.get("role") or user.get("type"),
+                }
+            )
+        return _success({"users": users, "count": len(users)})
+    except GHLAPIError as e:
+        return _error(e, required_scope="users.readonly")
+
+
+@mcp.tool()
+async def get_user(user_id: str) -> str:
+    """Get details for a specific team member.
+
+    Args:
+        user_id: The GHL user ID.
+    """
+    try:
+        data = await client.get(f"/users/{user_id}")
+        return _success({"user": data})
+    except GHLAPIError as e:
+        return _error(e, required_scope="users.readonly")
 
 
 if __name__ == "__main__":
