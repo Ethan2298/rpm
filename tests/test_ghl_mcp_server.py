@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from mcp_servers.jimmy.telemetry import MemoryEventStore
+from mcp_servers.ghl.telemetry import MemoryEventStore
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -18,10 +18,10 @@ def load_server_module():
     os.environ.setdefault("GHL_API_KEY", "test-api-key")
     os.environ.setdefault("GHL_LOCATION_ID", "test-location-id")
 
-    for name in ["mcp_servers.jimmy.config", "mcp_servers.jimmy.client", "mcp_servers.jimmy.server"]:
+    for name in ["mcp_servers.ghl.config", "mcp_servers.ghl.client", "mcp_servers.ghl.server"]:
         sys.modules.pop(name, None)
 
-    return importlib.import_module("mcp_servers.jimmy.server")
+    return importlib.import_module("mcp_servers.ghl.server")
 
 
 @pytest.fixture()
@@ -407,7 +407,7 @@ def test_get_location_uses_shared_success_envelope(monkeypatch, server_module):
 
 
 def test_get_location_custom_fields_uses_shared_success_envelope(monkeypatch, server_module):
-    async def fake_get(path, params=None, inject_location=True):
+    async def fake_get(path, params=None):
         assert path == "/locations/test-location-id/customFields"
         return {"customFields": [{"id": "field-1", "name": "Budget"}]}
 
@@ -730,4 +730,3 @@ def test_kb_list_shows_all_docs(server_module, kb_dir):
     assert "doc-a" in slugs
     assert "doc-b" in slugs
     assert "doc-c" in slugs
-

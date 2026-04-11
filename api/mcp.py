@@ -1,5 +1,5 @@
 """
-Vercel serverless function - serves the Jimmy MCP server over Streamable HTTP.
+Vercel serverless function — serves the GHL MCP server over Streamable HTTP.
 
 Claude Desktop / claude.ai connect to: https://<your-app>.vercel.app/api/mcp
 """
@@ -15,17 +15,16 @@ from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from mcp.server.transport_security import TransportSecuritySettings
-from mcp_servers.jimmy.server import mcp
+from mcp_servers.ghl.server import mcp
 
 # --- Serverless-friendly settings ---
 mcp.settings.stateless_http = True
 mcp.settings.streamable_http_path = "/api/mcp"
 
-# Disable DNS rebinding protection - Vercel handles host validation at the edge.
+# Disable DNS rebinding protection — Vercel handles host validation at the edge.
 mcp.settings.transport_security = TransportSecuritySettings(
     enable_dns_rebinding_protection=False,
 )
-
 
 def _normalize_token(value: str | None) -> str | None:
     if value is None:
@@ -48,7 +47,9 @@ class BearerAuthMiddleware:
             auth = request.headers.get("authorization", "")
             incoming_token = auth[7:].strip() if auth.startswith("Bearer ") else ""
             if incoming_token != self.token:
-                response = JSONResponse({"error": "Unauthorized"}, status_code=401)
+                response = JSONResponse(
+                    {"error": "Unauthorized"}, status_code=401
+                )
                 await response(scope, receive, send)
                 return
         await self.app(scope, receive, send)
@@ -56,4 +57,3 @@ class BearerAuthMiddleware:
 
 # --- Build the Starlette ASGI app with auth ---
 app = BearerAuthMiddleware(mcp.streamable_http_app(), MCP_AUTH_TOKEN)
-

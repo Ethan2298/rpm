@@ -1,40 +1,25 @@
 ---
 description: Live MCP testing session — call Jimmy's tools, inspect responses, catch issues before they hit prod
-allowed-tools: mcp__jimmy__*, mcp__jimmy-local__*, mcp__ghl__*, mcp__ghl-local__*
 ---
 
 # Test Jimmy — Live MCP Inspection
 
-You are entering a live testing session for the Jimmy MCP server.
-
-## Mode Detection
-
-Check the argument passed to this command:
-- If `$ARGUMENTS` contains "local" → **LOCAL MODE** — use `mcp__jimmy-local__*` tools (runs your local code via stdio)
-- If `$ARGUMENTS` contains "prod" or is empty → **PROD MODE** — use `mcp__jimmy__*` tools (hits the live Vercel deployment)
-
-**Print a banner at the top of every session:**
-- LOCAL MODE: `Testing against LOCAL MCP (stdio) — running code from your working directory`
-- PROD MODE: `Testing against PROD MCP (jimmy-sooty.vercel.app)`
-
-Use the correct tool prefix for the entire session based on the mode.
+You are entering a live testing session for the Jimmy GHL MCP server.
 
 ## What this is
 
-A hands-on session where you directly call the MCP tools registered on the server and inspect the results. Think of it like a powerglove — you manipulate the MCP, poke at every tool, and verify things work before pushing to prod.
-
-**Local mode is for testing code changes before deploying.** Fix a bug, run `/testjimmy local`, verify it works, then `/pushtoprodjimmy`.
+A hands-on session where you directly call the MCP tools registered on the live server and inspect the results. Think of it like a powerglove — you manipulate the MCP, poke at every tool, and verify things work before pushing to prod.
 
 ## How to run the session
 
 ### Step 1: Health Check
 Call a lightweight read-only tool to confirm the MCP server is reachable and authenticated:
-- Call `get_location` — this should return Mikalyzed Auto Boutique's location data
+- Call `mcp__ghl__get_location` — this should return Mikalyzed Auto Boutique's location data
 - If this fails, stop and diagnose (auth token expired? server down? deployment broken?)
 
 ### Step 2: Tool Inventory
 List what's available:
-- Report the total number of Jimmy MCP tools currently registered
+- Report the total number of GHL MCP tools currently registered
 - List them grouped by category (contacts, conversations, pipelines, calendars, tasks, notes, users, knowledge base)
 - Flag any tools that look broken, duplicated, or missing descriptions
 
@@ -76,5 +61,3 @@ After testing, give a clear summary:
 - If a tool returns a 403 scope error, log it once and move on
 - Keep responses tight — show the actual data, not just "it worked"
 - If Ethan says "test [specific thing]" — focus there, skip the rest
-
-

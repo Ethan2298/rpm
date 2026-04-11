@@ -1,40 +1,10 @@
 {
-    "mcpServers":  {
-                       "jimmy":  {
-                                     "url":  "https://jimmy-sooty.vercel.app/api/mcp",
-                                     "headers":  {
-                                                     "Authorization":  "Bearer urqSm8my6RL4XwwWuup-wrCHsnGBVs7BOVwky3GanyM"
-                                                 }
-                                 },
-                       "ghl":  {
-                                   "url":  "https://jimmy-sooty.vercel.app/api/mcp",
-                                   "headers":  {
-                                                   "Authorization":  "Bearer urqSm8my6RL4XwwWuup-wrCHsnGBVs7BOVwky3GanyM"
-                                               }
-                               },
-                       "jimmy-local":  {
-                                           "command":  "python",
-                                           "args":  [
-                                                        "-m",
-                                                        "mcp_servers.jimmy.server"
-                                                    ],
-                                           "cwd":  "C:\\Users\\ethan\\rpm",
-                                           "env":  {
-                                                       "GHL_API_KEY":  "pit-a9f10e20-8cb5-4618-9a14-41704f1b61ca",
-                                                       "GHL_LOCATION_ID":  "1QB8GTp5uOImt305H61U"
-                                                   }
-                                       },
-                       "ghl-local":  {
-                                         "command":  "python",
-                                         "args":  [
-                                                      "-m",
-                                                      "mcp_servers.ghl.server"
-                                                  ],
-                                         "cwd":  "C:\\Users\\ethan\\rpm",
-                                         "env":  {
-                                                     "GHL_API_KEY":  "pit-a9f10e20-8cb5-4618-9a14-41704f1b61ca",
-                                                     "GHL_LOCATION_ID":  "1QB8GTp5uOImt305H61U"
-                                                 }
-                                     }
-                   }
+  "mcpServers": {
+    "ghl": {
+      "url": "https://jimmy-sooty.vercel.app/api/mcp",
+      "headers": {
+        "Authorization": "Bearer urqSm8my6RL4XwwWuup-wrCHsnGBVs7BOVwky3GanyM"
+      }
+    }
+  }
 }

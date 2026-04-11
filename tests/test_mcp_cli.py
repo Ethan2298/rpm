@@ -8,7 +8,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from mcp_servers.jimmy.cli import (
+from mcp_servers.ghl.cli import (
     build_failures_report,
     build_latency_report,
     build_status_report,
@@ -19,7 +19,7 @@ from mcp_servers.jimmy.cli import (
     format_usage_report,
     run_command,
 )
-from mcp_servers.jimmy.telemetry import MCPEvent, MemoryEventStore
+from mcp_servers.ghl.telemetry import MCPEvent, MemoryEventStore
 
 
 def make_event(
@@ -148,4 +148,3 @@ def test_cli_commands_read_from_store():
     assert "total failures: 1" in failures_output
     assert "MCP latency" in latency_output
     assert "MCP usage" in usage_output
-
