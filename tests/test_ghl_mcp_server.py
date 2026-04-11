@@ -599,6 +599,7 @@ def test_search_contacts_emits_telemetry_event(monkeypatch, server_module, telem
     event = telemetry_store.events[0]
     assert event.tool_name == "search_contacts"
     assert event.success is True
+    assert event.integration_category == "GHL"
     assert event.payload_summary["arguments"]["query"] == "Ethan"
 
 
@@ -618,6 +619,7 @@ def test_failed_upstream_call_still_records_telemetry(monkeypatch, server_module
     assert event.success is False
     assert event.upstream_status == 403
     assert event.scope_required == "conversations/message.write"
+    assert event.integration_category == "GHL"
 
 
 # ---------------------------------------------------------------------------

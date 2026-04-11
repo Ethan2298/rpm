@@ -18,6 +18,7 @@ from mcp.server.fastmcp import FastMCP
 LOGGER = logging.getLogger(__name__)
 
 DEFAULT_EVENTS_TABLE = "mcp_events"
+DEFAULT_INTEGRATION_CATEGORY = "GHL"
 SENSITIVE_KEYWORDS = (
     "body",
     "content",
@@ -140,6 +141,7 @@ class MCPEvent:
     scope_required: str | None
     upstream_status: int | None
     payload_summary: dict[str, Any]
+    integration_category: str = DEFAULT_INTEGRATION_CATEGORY
 
     def to_row(self) -> dict[str, Any]:
         return {
@@ -147,6 +149,7 @@ class MCPEvent:
             "occurred_at": _to_iso_z(self.timestamp),
             "actor": self.actor,
             "session_id": self.session_id,
+            "integration_category": self.integration_category,
             "tool_name": self.tool_name,
             "duration_ms": self.duration_ms,
             "success": self.success,
@@ -171,6 +174,7 @@ class MCPEvent:
             timestamp=timestamp,
             actor=str(row.get("actor") or "unknown"),
             session_id=row.get("session_id"),
+            integration_category=str(row.get("integration_category") or DEFAULT_INTEGRATION_CATEGORY),
             tool_name=str(row.get("tool_name") or ""),
             duration_ms=int(row.get("duration_ms") or 0),
             success=_coerce_bool(row.get("success")),
@@ -186,6 +190,7 @@ class MCPEventQuery:
     since: datetime | None = None
     until: datetime | None = None
     actor: str | None = None
+    integration_category: str | None = None
     tool_name: str | None = None
     success: bool | None = None
     limit: int = 200
@@ -233,6 +238,8 @@ class MemoryEventStore:
             events = [event for event in events if event.timestamp <= query.until]
         if query.actor:
             events = [event for event in events if event.actor == query.actor]
+        if query.integration_category:
+            events = [event for event in events if event.integration_category == query.integration_category]
         if query.tool_name:
             events = [event for event in events if event.tool_name == query.tool_name]
         if query.success is not None:
@@ -275,6 +282,8 @@ class SupabaseEventStore:
             params.append(("occurred_at", f"lte.{_to_iso_z(query.until)}"))
         if query.actor:
             params.append(("actor", f"eq.{query.actor}"))
+        if query.integration_category:
+            params.append(("integration_category", f"eq.{query.integration_category}"))
         if query.tool_name:
             params.append(("tool_name", f"eq.{query.tool_name}"))
         if query.success is not None:
@@ -314,6 +323,14 @@ def resolve_session_id() -> str | None:
         if value:
             return value
     return None
+
+
+def resolve_integration_category() -> str:
+    for env_name in ("MCP_INTEGRATION_CATEGORY", "MCP_CATEGORY", "MCP_TOOL_CATEGORY"):
+        value = os.getenv(env_name, "").strip()
+        if value:
+            return value
+    return DEFAULT_INTEGRATION_CATEGORY
 
 
 def classify_result(result: Any) -> tuple[bool, int | None, str | None, str | None]:
@@ -399,6 +416,7 @@ class InstrumentedFastMCP:
                         timestamp=timestamp,
                         actor=resolve_actor(),
                         session_id=resolve_session_id(),
+                        integration_category=resolve_integration_category(),
                         tool_name=tool_name,
                         duration_ms=duration_ms,
                         success=success,

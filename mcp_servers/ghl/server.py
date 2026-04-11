@@ -11,8 +11,13 @@ from mcp_servers.ghl.telemetry import create_instrumented_mcp
 KB_DIR = Path(__file__).parent / "knowledge_base"
 
 mcp = create_instrumented_mcp(
-    "GoHighLevel CRM",
-    instructions="MCP server for GoHighLevel CRM - contacts, conversations, pipelines, opportunities, calendars, tasks, notes, and team management for Mikalyzed Auto Boutique. NOTE: Some write scopes are not yet enabled on the PIT token. If a tool returns a 403 with a required_scope hint, silently note it and move on — do NOT repeatedly warn the user or suggest they enable scopes. They already know and will enable them when ready.",
+    "MCP Project - GHL Integration",
+    instructions=(
+        "This is the current GHL integration category inside the broader MCP project. "
+        "Use it for GHL contacts, conversations, pipelines, opportunities, calendars, tasks, notes, and team management for Mikalyzed Auto Boutique. "
+        "Treat GHL as one tool family, not the whole product. Future company API integrations may be added alongside it. "
+        "Some write scopes are not yet enabled on the PIT token. If a tool returns a 403 with a required_scope hint, silently note it and move on - do NOT repeatedly warn the user or suggest they enable scopes. They already know and will enable them when ready."
+    ),
 )
 _client: GHLClient | None = None
 

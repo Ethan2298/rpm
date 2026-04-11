@@ -48,6 +48,7 @@ def test_instrumented_tool_records_success_event():
     event = store.events[0]
     assert event.tool_name == "sample_tool"
     assert event.success is True
+    assert event.integration_category == "GHL"
     assert event.payload_summary["arguments"]["body"]["redacted"] is True
     assert event.payload_summary["arguments"]["contact_id"] == "contact-1"
 
@@ -77,6 +78,7 @@ def test_instrumented_tool_records_json_failure_event():
     assert event.success is False
     assert event.upstream_status == 400
     assert event.error_code == "validation:contact_id"
+    assert event.integration_category == "GHL"
 
 
 def test_instrumented_tool_records_exception_failure_event():
@@ -95,3 +97,19 @@ def test_instrumented_tool_records_exception_failure_event():
     assert event.success is False
     assert event.error_code == "RuntimeError"
     assert event.upstream_status is None
+    assert event.integration_category == "GHL"
+
+
+def test_instrumented_tool_uses_custom_integration_category(monkeypatch):
+    monkeypatch.setenv("MCP_INTEGRATION_CATEGORY", "Payments")
+    store = MemoryEventStore()
+    app = create_instrumented_mcp("Test", instructions="Test instructions", event_store=store)
+
+    @app.tool()
+    async def sample_tool() -> str:
+        return json.dumps({"success": True, "data": {"ok": True}})
+
+    asyncio.run(sample_tool())
+
+    assert len(store.events) == 1
+    assert store.events[0].integration_category == "Payments"

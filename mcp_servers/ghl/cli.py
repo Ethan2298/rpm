@@ -52,11 +52,28 @@ def _tool_stats(events: list[MCPEvent]) -> dict[str, dict[str, Any]]:
     return dict(sorted(stats.items(), key=lambda item: (-item[1]["count"], item[0])))
 
 
+def _integration_stats(events: list[MCPEvent]) -> dict[str, dict[str, Any]]:
+    buckets: dict[str, list[int]] = defaultdict(list)
+    for event in events:
+        buckets[event.integration_category].append(event.duration_ms)
+
+    stats: dict[str, dict[str, Any]] = {}
+    for category, durations in buckets.items():
+        stats[category] = {
+            "count": len(durations),
+            "avg_ms": int(round(mean(durations))) if durations else 0,
+            "p95_ms": _percentile(durations, 0.95),
+            "max_ms": max(durations) if durations else 0,
+        }
+    return dict(sorted(stats.items(), key=lambda item: (-item[1]["count"], item[0])))
+
+
 def build_status_report(events: list[MCPEvent], *, store_configured: bool, window_days: int) -> dict[str, Any]:
     failures = [event for event in events if not event.success]
     latency_values = [event.duration_ms for event in events]
     tool_counts = Counter(event.tool_name for event in events)
     actor_counts = Counter(event.actor for event in events)
+    integration_counts = Counter(event.integration_category for event in events)
     last_event_at = max((event.timestamp for event in events), default=None)
     return {
         "store_configured": store_configured,
@@ -67,6 +84,7 @@ def build_status_report(events: list[MCPEvent], *, store_configured: bool, windo
         "p95_ms": _percentile(latency_values, 0.95),
         "top_tool": _top_rows(tool_counts, 1)[0] if tool_counts else None,
         "top_actor": _top_rows(actor_counts, 1)[0] if actor_counts else None,
+        "top_integration": _top_rows(integration_counts, 1)[0] if integration_counts else None,
     }
 
 
@@ -86,16 +104,21 @@ def format_status_report(report: dict[str, Any]) -> str:
     if report["top_actor"]:
         actor, count = report["top_actor"]
         lines.append(f"- top actor: {actor} ({count})")
+    if report["top_integration"]:
+        integration, count = report["top_integration"]
+        lines.append(f"- top integration: {integration} ({count})")
     return "\n".join(lines)
 
 
 def build_failures_report(events: list[MCPEvent], *, limit: int) -> dict[str, Any]:
     failures = [event for event in events if not event.success]
     failure_codes = Counter(event.error_code or "unknown" for event in failures)
+    failure_integrations = Counter(event.integration_category for event in failures)
     recent_failures = failures[:limit]
     return {
         "failure_count": len(failures),
         "failure_codes": failure_codes,
+        "failure_integrations": failure_integrations,
         "recent_failures": recent_failures,
     }
 
@@ -109,11 +132,15 @@ def format_failures_report(report: dict[str, Any]) -> str:
         lines.append("- failure codes:")
         for code, count in _top_rows(report["failure_codes"], limit=10):
             lines.append(f"  - {code}: {count}")
+    if report["failure_integrations"]:
+        lines.append("- failure integrations:")
+        for integration, count in _top_rows(report["failure_integrations"], limit=10):
+            lines.append(f"  - {integration}: {count}")
     if report["recent_failures"]:
         lines.append("- recent failures:")
         for event in report["recent_failures"]:
             lines.append(
-                f"  - {_format_dt(event.timestamp)} {event.tool_name} {event.error_code or 'unknown'} "
+                f"  - {_format_dt(event.timestamp)} integration={event.integration_category} {event.tool_name} {event.error_code or 'unknown'} "
                 f"status={event.upstream_status or 'n/a'} scope={event.scope_required or 'n/a'} "
                 f"actor={event.actor} duration={event.duration_ms}ms request_id={event.request_id}"
             )
@@ -122,9 +149,11 @@ def format_failures_report(report: dict[str, Any]) -> str:
 
 def build_latency_report(events: list[MCPEvent]) -> dict[str, Any]:
     stats = _tool_stats(events)
+    integration_stats = _integration_stats(events)
     return {
         "event_count": len(events),
         "tool_stats": stats,
+        "integration_stats": integration_stats,
         "overall_avg_ms": int(round(mean([event.duration_ms for event in events]))) if events else 0,
         "overall_p95_ms": _percentile([event.duration_ms for event in events], 0.95),
     }
@@ -143,12 +172,19 @@ def format_latency_report(report: dict[str, Any]) -> str:
             lines.append(
                 f"{tool_name:<24} {stats['count']:>5} {stats['avg_ms']:>5} {stats['p95_ms']:>5} {stats['max_ms']:>5}"
             )
+    if report["integration_stats"]:
+        lines.append("integration              count   avg   p95   max")
+        for integration, stats in report["integration_stats"].items():
+            lines.append(
+                f"{integration:<24} {stats['count']:>5} {stats['avg_ms']:>5} {stats['p95_ms']:>5} {stats['max_ms']:>5}"
+            )
     return "\n".join(lines)
 
 
 def build_usage_report(events: list[MCPEvent]) -> dict[str, Any]:
     tool_counts = Counter(event.tool_name for event in events)
     actor_counts = Counter(event.actor for event in events)
+    integration_counts = Counter(event.integration_category for event in events)
     successful = sum(1 for event in events if event.success)
     return {
         "event_count": len(events),
@@ -156,6 +192,7 @@ def build_usage_report(events: list[MCPEvent]) -> dict[str, Any]:
         "failure_count": len(events) - successful,
         "tool_counts": tool_counts,
         "actor_counts": actor_counts,
+        "integration_counts": integration_counts,
     }
 
 
@@ -174,6 +211,10 @@ def format_usage_report(report: dict[str, Any]) -> str:
         lines.append("- top actors:")
         for actor, count in _top_rows(report["actor_counts"], limit=10):
             lines.append(f"  - {actor}: {count}")
+    if report["integration_counts"]:
+        lines.append("- top integrations:")
+        for integration, count in _top_rows(report["integration_counts"], limit=10):
+            lines.append(f"  - {integration}: {count}")
     return "\n".join(lines)
 
 
