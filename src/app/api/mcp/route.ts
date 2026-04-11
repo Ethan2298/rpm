@@ -6,6 +6,7 @@ import { NextRequest } from "next/server";
 const MCP_AUTH_TOKEN = process.env.MCP_AUTH_TOKEN!;
 
 function authenticate(request: NextRequest): boolean {
+  if (!MCP_AUTH_TOKEN) return false;
   const auth = request.headers.get("authorization");
   if (!auth) return false;
   const token = auth.replace(/^Bearer\s+/i, "");
@@ -14,10 +15,13 @@ function authenticate(request: NextRequest): boolean {
 
 async function handleMCP(request: NextRequest): Promise<Response> {
   if (!authenticate(request)) {
-    return new Response(JSON.stringify({ error: "unauthorized" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({
+        error: "unauthorized",
+        hint: MCP_AUTH_TOKEN ? "token_mismatch" : "token_not_configured",
+      }),
+      { status: 401, headers: { "Content-Type": "application/json" } },
+    );
   }
 
   const server = new McpServer({
