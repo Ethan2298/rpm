@@ -15,12 +15,19 @@ function authenticate(request: NextRequest): boolean {
 
 async function handleMCP(request: NextRequest): Promise<Response> {
   if (!authenticate(request)) {
+    const origin = new URL(request.url).origin;
     return new Response(
       JSON.stringify({
         error: "unauthorized",
         hint: MCP_AUTH_TOKEN ? "token_mismatch" : "token_not_configured",
       }),
-      { status: 401, headers: { "Content-Type": "application/json" } },
+      {
+        status: 401,
+        headers: {
+          "Content-Type": "application/json",
+          "WWW-Authenticate": `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource"`,
+        },
+      },
     );
   }
 
