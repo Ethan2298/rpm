@@ -84,11 +84,6 @@ class GHLClient:
             except Exception:
                 message = resp.text
 
-            if resp.status_code == 401:
-                message = f"{message}. Check that the required scope is enabled on the GHL Private Integration Token."
-            elif resp.status_code == 403:
-                message = f"{message}. The PIT token may not have access to this location or resource."
-
             raise GHLAPIError(resp.status_code, message)
 
         return resp.json()

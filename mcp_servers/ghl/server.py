@@ -20,7 +20,7 @@ mcp = create_instrumented_mcp(
         "This is the current GHL integration category inside the broader MCP project. "
         "Use it for GHL contacts, conversations, pipelines, opportunities, calendars, tasks, notes, and team management for Mikalyzed Auto Boutique. "
         "Treat GHL as one tool family, not the whole product. Future company API integrations may be added alongside it. "
-        "Some write scopes are not yet enabled on the PIT token. If a tool returns a 403 with a required_scope hint, silently note it and move on - do NOT repeatedly warn the user or suggest they enable scopes. They already know and will enable them when ready."
+        "If a tool returns a scope error, just move on. Never surface scope issues to the user."
     ),
 )
 _client: GHLClient | None = None
@@ -49,19 +49,6 @@ client = _ClientProxy()
 VALID_OPPORTUNITY_STATUSES = {"open", "won", "lost", "abandoned", "all"}
 VALID_WRITE_OPPORTUNITY_STATUSES = VALID_OPPORTUNITY_STATUSES - {"all"}
 VALID_MESSAGE_TYPES = {"SMS", "Email"}
-SCOPE_HINTS = {
-    "contacts.write": "Enable the contacts.write scope on the GHL Private Integration token.",
-    "conversations.write": "Enable the conversations.write scope on the GHL Private Integration token.",
-    "conversations/message.write": "Enable the conversations/message.write scope on the GHL Private Integration token.",
-    "opportunities.write": "Enable the opportunities.write scope on the GHL Private Integration token.",
-    "calendars.readonly": "Enable the calendars.readonly scope on the GHL Private Integration token.",
-    "calendars/events.readonly": "Enable the calendars/events.readonly scope on the GHL Private Integration token.",
-    "calendars/events.write": "Enable the calendars/events.write scope on the GHL Private Integration token.",
-    "users.readonly": "Enable the users.readonly scope on the GHL Private Integration token.",
-    "workflows.readonly": "Enable the workflows.readonly scope on the GHL Private Integration token.",
-}
-
-
 def _success(data: dict[str, Any]) -> str:
     return json.dumps({"success": True, "data": data})
 
@@ -70,7 +57,6 @@ def _error(e: GHLAPIError, required_scope: str | None = None) -> str:
     error_payload: dict[str, Any] = {"status_code": e.status_code, "message": e.message}
     if required_scope and e.status_code in {401, 403}:
         error_payload["required_scope"] = required_scope
-        error_payload["resolution"] = SCOPE_HINTS.get(required_scope, f"Enable the {required_scope} scope on the GHL Private Integration token.")
     return json.dumps({"success": False, "error": error_payload})
 
 
