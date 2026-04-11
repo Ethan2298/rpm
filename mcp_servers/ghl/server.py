@@ -5,7 +5,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import httpx
+
 from mcp_servers.ghl.client import GHLAPIError, GHLClient
+from mcp_servers.ghl.config import GHL_LOCATION_ID
 from mcp_servers.ghl.telemetry import create_instrumented_mcp
 
 KB_DIR = Path(__file__).parent / "knowledge_base"
@@ -15,12 +18,15 @@ SKILL_TEMPLATE_SLUG = "skill-template"
 COMMANDS_DIR = Path(__file__).parent / "commands"
 
 mcp = create_instrumented_mcp(
-    "MCP Project - GHL Integration",
+    "Jimmy — Dealership Operations",
     instructions=(
-        "This is the current GHL integration category inside the broader MCP project. "
-        "Use it for GHL contacts, conversations, pipelines, opportunities, calendars, tasks, notes, and team management for Mikalyzed Auto Boutique. "
-        "Treat GHL as one tool family, not the whole product. Future company API integrations may be added alongside it. "
-        "If a tool returns a scope error, just move on. Never surface scope issues to the user."
+        "You are Jimmy, an AI dealership operator. "
+        "FIRST ACTION: Call get_dealer_context before doing anything else. "
+        "It returns your voice rules, formatting requirements, and reasoning patterns — apply them to every response. "
+        "Use GHL tools for contacts, conversations, pipelines, opportunities, calendars, tasks, notes, and team management. "
+        "Use kb_read/kb_search to look up dealership knowledge before answering domain questions. "
+        "If a tool returns a scope error, move on silently. Never surface scope issues to the user. "
+        "Never explain how you work. Never summarize what you just did. Just do the thing and report the result."
     ),
 )
 _client: GHLClient | None = None
@@ -142,6 +148,9 @@ def _serialize_opportunity_summary(opportunity: dict[str, Any]) -> dict[str, Any
 async def search_contacts(query: str = "", tag: str = "", limit: int = 20) -> str:
     """Search dealership contacts by name, phone, email, or tag.
 
+    TRIGGER: When the user mentions a person's name, asks "who is...", wants to look someone up,
+    or references a lead/customer. Don't ask — just search.
+
     Args:
         query: Free-text search across contact name, phone, or email.
         tag: Optional tag keyword to search for when narrowing to tagged contacts.
@@ -183,6 +192,9 @@ async def search_contacts(query: str = "", tag: str = "", limit: int = 20) -> st
 async def get_contact(contact_id: str) -> str:
     """Get full details for a specific contact by their GHL contact ID.
 
+    TRIGGER: After finding a contact via search_contacts, always pull full details
+    before answering questions about them. The search result is a summary — this is the truth.
+
     Args:
         contact_id: The GHL contact ID returned by search_contacts.
     """
@@ -218,6 +230,9 @@ async def get_contact(contact_id: str) -> str:
 @mcp.tool()
 async def search_conversations(contact_id: str = "", limit: int = 20) -> str:
     """Search conversations, optionally filtered by contact ID.
+
+    TRIGGER: When the user asks about messages, recent conversations, what a contact said,
+    or before sending any message (you need the conversation_id).
 
     Args:
         contact_id: Optional GHL contact ID to scope conversations to one contact.
@@ -513,6 +528,13 @@ async def remove_contact_tags(contact_id: str, tags: list[str]) -> str:
 async def send_message(conversation_id: str, message_type: str, body: str, subject: str = "") -> str:
     """Send an SMS or email through an existing conversation.
 
+    TRIGGER: When the user says "text them", "send a message", "follow up", "reach out",
+    or anything implying outbound communication to a contact.
+
+    BEFORE SENDING: Check kb_search for relevant guidelines (follow-up practices, objection handling).
+    Apply tone-and-voice rules to the message body — it should sound human, not templated.
+    Keep SMS under 3 sentences. Always include a next step or question.
+
     Args:
         conversation_id: The conversation ID. Look this up via search_conversations first.
         message_type: Allowed values are SMS or Email.
@@ -552,6 +574,10 @@ async def create_opportunity(
     status: str = "open",
 ) -> str:
     """Create a new opportunity/deal for a contact.
+
+    TRIGGER: When a lead is qualified and ready to track as a deal, or the user says
+    "create a deal", "add to pipeline", "start tracking this one".
+    Always call get_pipelines first to get valid pipeline_id and stage_id values.
 
     Args:
         contact_id: The GHL contact ID the deal belongs to.
@@ -1081,7 +1107,7 @@ async def get_user(user_id: str) -> str:
         return _error(e, required_scope="users.readonly")
 
 # ---------------------------------------------------------------------------
-# Knowledge Base tools
+# Knowledge Base tools — hybrid: Supabase for writes, bundled files as fallback
 # ---------------------------------------------------------------------------
 
 
@@ -1118,30 +1144,212 @@ def _kb_doc_to_dict(path: Path) -> dict[str, Any]:
     }
 
 
+def _kb_title_from_content(content: str, slug: str) -> str:
+    """Extract title from first H1 heading, or derive from slug."""
+    for line in content.splitlines():
+        if line.startswith("# "):
+            return line[2:].strip()
+    return slug.rsplit("/", 1)[-1].replace("-", " ").title()
+
+
+_KB_TABLE = "knowledge_base"
+
+
+def _kb_supabase_configured() -> bool:
+    return bool(
+        os.getenv("SUPABASE_URL", "").strip()
+        and os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+    )
+
+
+def _kb_headers() -> dict[str, str]:
+    key = os.environ["SUPABASE_SERVICE_ROLE_KEY"].strip()
+    return {
+        "Authorization": f"Bearer {key}",
+        "apikey": key,
+        "Content-Type": "application/json",
+    }
+
+
+def _kb_base_url() -> str:
+    return os.environ["SUPABASE_URL"].strip().rstrip("/")
+
+
+def _kb_location_id() -> str:
+    return GHL_LOCATION_ID or "default"
+
+
+async def _kb_sb_list() -> list[dict[str, Any]]:
+    params = [
+        ("select", "slug,title,content,size_bytes"),
+        ("location_id", f"eq.{_kb_location_id()}"),
+        ("order", "slug.asc"),
+    ]
+    async with httpx.AsyncClient(base_url=_kb_base_url(), headers=_kb_headers(), timeout=15.0) as c:
+        r = await c.get(f"/rest/v1/{_KB_TABLE}", params=params)
+        r.raise_for_status()
+        return r.json()
+
+
+async def _kb_sb_read(slug: str) -> dict[str, Any] | None:
+    params = [
+        ("select", "slug,title,content,size_bytes"),
+        ("location_id", f"eq.{_kb_location_id()}"),
+        ("slug", f"eq.{slug}"),
+        ("limit", "1"),
+    ]
+    async with httpx.AsyncClient(base_url=_kb_base_url(), headers=_kb_headers(), timeout=15.0) as c:
+        r = await c.get(f"/rest/v1/{_KB_TABLE}", params=params)
+        r.raise_for_status()
+        rows = r.json()
+        return rows[0] if rows else None
+
+
+async def _kb_sb_upsert(slug: str, title: str, content: str) -> dict[str, Any]:
+    row = {
+        "location_id": _kb_location_id(),
+        "slug": slug,
+        "title": title,
+        "content": content,
+        "size_bytes": len(content.encode("utf-8")),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    headers = _kb_headers()
+    headers["Prefer"] = "return=representation,resolution=merge-duplicates"
+    async with httpx.AsyncClient(base_url=_kb_base_url(), headers=headers, timeout=15.0) as c:
+        r = await c.post(f"/rest/v1/{_KB_TABLE}", json=row)
+        r.raise_for_status()
+        rows = r.json()
+        return rows[0] if rows else row
+
+
+async def _kb_sb_delete(slug: str) -> bool:
+    params = [
+        ("location_id", f"eq.{_kb_location_id()}"),
+        ("slug", f"eq.{slug}"),
+    ]
+    headers = _kb_headers()
+    headers["Prefer"] = "return=representation"
+    async with httpx.AsyncClient(base_url=_kb_base_url(), headers=headers, timeout=15.0) as c:
+        r = await c.delete(f"/rest/v1/{_KB_TABLE}", params=params)
+        r.raise_for_status()
+        return len(r.json()) > 0
+
+
+def _bundled_kb_docs() -> dict[str, dict[str, Any]]:
+    docs: dict[str, dict[str, Any]] = {}
+    if KB_DIR.exists():
+        for path in sorted(KB_DIR.rglob("*.md")):
+            doc = _kb_doc_to_dict(path)
+            docs[doc["slug"]] = doc
+    return docs
+
+
+def _merge_kb(bundled: dict[str, dict[str, Any]], sb_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    merged = dict(bundled)
+    for row in sb_rows:
+        merged[row["slug"]] = {
+            "slug": row["slug"],
+            "title": row["title"],
+            "content": row["content"],
+            "size_bytes": row["size_bytes"],
+        }
+    return sorted(merged.values(), key=lambda d: d["slug"])
+
+
+async def _kb_all_docs() -> list[dict[str, Any]]:
+    bundled = _bundled_kb_docs()
+    sb_rows = await _kb_sb_list() if _kb_supabase_configured() else []
+    return _merge_kb(bundled, sb_rows)
+
+
+async def _kb_read_one(slug: str) -> dict[str, Any] | None:
+    if _kb_supabase_configured():
+        row = await _kb_sb_read(slug)
+        if row:
+            return row
+    path = (KB_DIR / f"{slug}.md").resolve()
+    if path.is_relative_to(KB_DIR.resolve()) and path.exists():
+        return _kb_doc_to_dict(path)
+    return None
+
+
+TONE_SLUG = "tone-and-voice"
+
+
+@mcp.tool()
+async def get_dealer_context() -> str:
+    """Load Jimmy's tone, formatting rules, and reasoning patterns for this dealer.
+
+    **CALL THIS BEFORE YOUR FIRST RESPONSE IN EVERY CONVERSATION.**
+
+    Returns:
+    - Voice and formatting rules you MUST follow in all responses
+    - Reasoning patterns for how to think about dealership tasks
+    - A summary of available knowledge base documents so you know what reference material exists
+
+    After calling this tool, apply the returned rules to every subsequent message.
+    Do not summarize or repeat the rules back — just absorb and follow them.
+    """
+    # Load tone document (Supabase first, bundled fallback)
+    tone_doc = await _kb_read_one(TONE_SLUG)
+    if tone_doc:
+        tone_content = tone_doc["content"]
+    else:
+        tone_content = (
+            "No tone document found. Defaults: be direct, concise, and helpful. "
+            "Avoid corporate filler. Lead with answers."
+        )
+
+    # Build KB index
+    all_docs = await _kb_all_docs()
+    available_docs = [
+        {"slug": d["slug"], "title": d["title"]}
+        for d in all_docs
+        if d["slug"] != TONE_SLUG
+    ]
+
+    return _success({
+        "tone_and_voice": tone_content,
+        "available_knowledge": available_docs,
+        "knowledge_count": len(available_docs),
+        "instructions": (
+            "Apply the tone_and_voice rules to ALL responses in this conversation. "
+            "These are not suggestions — they are requirements. "
+            "When a question touches a topic covered by available_knowledge, "
+            "use kb_read to load the relevant doc before answering. "
+            "Never guess when you can look it up."
+        ),
+    })
+
+
 @mcp.tool()
 async def kb_list(folder: str = "") -> str:
-    """List knowledge base documents, optionally filtered to a folder.
+    """List all knowledge base documents.
 
-    Returns titles, slugs, and sizes. Includes a tree view of the folder structure.
+    Returns titles, slugs, and sizes of all docs in the dealership knowledge base.
     Use slugs with kb_read to fetch full content.
-
-    Args:
-        folder: Optional folder path to list (e.g. "pipeline"). Empty string lists everything.
     """
-    KB_DIR.mkdir(parents=True, exist_ok=True)
-    base = KB_DIR / folder if folder else KB_DIR
-    if not base.exists():
-        return _success({"documents": [], "folders": [], "count": 0, "folder": folder or "/"})
-    docs = []
+    all_docs = await _kb_all_docs()
+
+    if folder:
+        prefix = folder.rstrip("/") + "/"
+        all_docs = [d for d in all_docs if d["slug"].startswith(prefix) or d["slug"] == folder.rstrip("/")]
+
+    docs = [{"slug": d["slug"], "title": d["title"], "size_bytes": d["size_bytes"]} for d in all_docs]
     child_folders: set[str] = set()
-    for path in sorted(base.rglob("*.md")):
-        doc = _kb_doc_to_dict(path)
-        docs.append({"slug": doc["slug"], "title": doc["title"], "size_bytes": doc["size_bytes"]})
-    # Collect immediate child directories of the target folder
-    if base.exists():
-        for child in sorted(base.iterdir()):
-            if child.is_dir():
-                child_folders.add(child.relative_to(KB_DIR).as_posix())
+    folder_prefix = (folder.rstrip("/") + "/") if folder else ""
+    for d in all_docs:
+        slug = d["slug"]
+        if "/" in slug:
+            parts = slug.split("/")
+            if folder:
+                remaining = slug[len(folder_prefix):] if slug.startswith(folder_prefix) else None
+                if remaining and "/" in remaining:
+                    child_folders.add(folder_prefix + remaining.split("/")[0])
+            else:
+                child_folders.add(parts[0])
+
     return _success({
         "documents": docs,
         "folders": sorted(child_folders),
@@ -1155,15 +1363,12 @@ async def kb_read(slug: str) -> str:
     """Read a knowledge base document by its slug.
 
     Args:
-        slug: The document slug from kb_list (e.g. "lead-qualification", "pipeline/car-sales-stages").
+        slug: The document slug from kb_list (e.g. "lead-qualification", "follow-up-practices").
     """
-    path = (KB_DIR / f"{slug}.md").resolve()
-    if not path.is_relative_to(KB_DIR.resolve()):
-        return _validation_error("Invalid slug — path traversal not allowed.", field="slug")
-    if not path.exists():
-        return _validation_error(f"Document '{slug}' not found. Use kb_list to see available documents.", field="slug")
-    doc = _kb_doc_to_dict(path)
-    return _success({"document": doc})
+    doc = await _kb_read_one(slug)
+    if doc:
+        return _success({"document": doc})
+    return _validation_error(f"Document '{slug}' not found. Use kb_list to see available documents.", field="slug")
 
 
 @mcp.tool()
@@ -1173,30 +1378,31 @@ async def kb_write(name: str, content: str) -> str:
     Use this to capture dealership knowledge — sales practices, inventory notes,
     customer personas, objection handling, or anything the team wants the agent to know.
 
-    Supports folders: use "/" in the name to organize docs (e.g. "pipeline/Car Sales Stages").
-
     Args:
-        name: Document name, optionally with folder path (e.g. "pipeline/Car Sales Stages"). Gets slugified.
+        name: Human-readable document name (e.g. "Classic Car Buyers"). Gets slugified for the filename.
         content: Full markdown content for the document. Start with a # heading matching the name.
     """
     if not content.strip():
         return _validation_error("content cannot be empty", field="content")
+    if not _kb_supabase_configured():
+        return _validation_error("Knowledge base storage is not configured.", field="name")
     try:
         slug = _kb_slug(name)
     except ValueError as e:
         return _validation_error(str(e), field="name")
 
-    path = (KB_DIR / f"{slug}.md").resolve()
-    if not path.is_relative_to(KB_DIR.resolve()):
-        return _validation_error("Invalid name — path traversal not allowed.", field="name")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    existed = path.exists()
-    path.write_text(content, encoding="utf-8")
-
-    doc = _kb_doc_to_dict(path)
+    title = _kb_title_from_content(content, slug)
+    existing = await _kb_read_one(slug)
+    row = await _kb_sb_upsert(slug, title, content)
+    doc = {
+        "slug": row.get("slug", slug),
+        "title": row.get("title", title),
+        "content": row.get("content", content),
+        "size_bytes": row.get("size_bytes", len(content.encode("utf-8"))),
+    }
     return _success({
         "document": doc,
-        "action": "updated" if existed else "created",
+        "action": "updated" if existing else "created",
     })
 
 
@@ -1204,35 +1410,30 @@ async def kb_write(name: str, content: str) -> str:
 async def kb_search(query: str, folder: str = "") -> str:
     """Search knowledge base documents by keyword.
 
-    Searches document titles, content, and folder paths for the query string. Case-insensitive.
+    Searches document titles and content for the query string. Case-insensitive.
 
     Args:
-        query: Search term to find across knowledge base documents.
-        folder: Optional folder to limit the search (e.g. "pipeline"). Empty searches everything.
+        query: Search term to find across all knowledge base documents.
     """
     if not query.strip():
         return _validation_error("query cannot be empty", field="query")
 
-    KB_DIR.mkdir(parents=True, exist_ok=True)
-    base = KB_DIR / folder if folder else KB_DIR
+    all_docs = await _kb_all_docs()
+    if folder:
+        prefix = folder.rstrip("/") + "/"
+        all_docs = [d for d in all_docs if d["slug"].startswith(prefix)]
+
     query_lower = query.lower()
     results = []
-    for path in sorted(base.rglob("*.md")):
-        doc = _kb_doc_to_dict(path)
-        full_text = doc["content"].lower()
-        slug_text = doc["slug"].lower()
-        if query_lower in full_text or query_lower in doc["title"].lower() or query_lower in slug_text:
+    for doc in all_docs:
+        if query_lower in doc["content"].lower() or query_lower in doc["title"].lower() or query_lower in doc["slug"].lower():
             snippets = []
             for line in doc["content"].splitlines():
                 if query_lower in line.lower() and line.strip():
                     snippets.append(line.strip()[:200])
                     if len(snippets) >= 3:
                         break
-            results.append({
-                "slug": doc["slug"],
-                "title": doc["title"],
-                "snippets": snippets,
-            })
+            results.append({"slug": doc["slug"], "title": doc["title"], "snippets": snippets})
 
     return _success({"results": results, "count": len(results), "query": query})
 
@@ -1242,21 +1443,21 @@ async def kb_delete(slug: str) -> str:
     """Delete a knowledge base document.
 
     Args:
-        slug: The document slug from kb_list (e.g. "lead-qualification", "pipeline/car-sales-stages").
+        slug: The document slug from kb_list.
     """
+    if not _kb_supabase_configured():
+        return _validation_error("Knowledge base storage is not configured.", field="slug")
+
+    deleted = await _kb_sb_delete(slug)
+    if deleted:
+        return _success({"deleted": slug, "title": slug.rsplit("/", 1)[-1].replace("-", " ").title()})
+
+    # Bundled files can't be deleted
     path = (KB_DIR / f"{slug}.md").resolve()
-    if not path.is_relative_to(KB_DIR.resolve()):
-        return _validation_error("Invalid slug — path traversal not allowed.", field="slug")
-    if not path.exists():
-        return _validation_error(f"Document '{slug}' not found. Use kb_list to see available documents.", field="slug")
-    title = _kb_doc_to_dict(path)["title"]
-    path.unlink()
-    # Clean up empty parent folders
-    parent = path.parent
-    while parent != KB_DIR and parent.exists() and not any(parent.iterdir()):
-        parent.rmdir()
-        parent = parent.parent
-    return _success({"deleted": slug, "title": title})
+    if path.is_relative_to(KB_DIR.resolve()) and path.exists():
+        return _validation_error(f"'{slug}' is a default document and cannot be deleted.", field="slug")
+
+    return _validation_error(f"Document '{slug}' not found. Use kb_list to see available documents.", field="slug")
 
 
 # ── Jimmy skill system ──────────────────────────────────────────────────────
