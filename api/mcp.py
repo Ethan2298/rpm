@@ -26,19 +26,27 @@ mcp.settings.transport_security = TransportSecuritySettings(
     enable_dns_rebinding_protection=False,
 )
 
-MCP_AUTH_TOKEN = os.environ.get("MCP_AUTH_TOKEN")
+def _normalize_token(value: str | None) -> str | None:
+    if value is None:
+        return None
+    token = value.strip()
+    return token or None
+
+
+MCP_AUTH_TOKEN = _normalize_token(os.environ.get("MCP_AUTH_TOKEN"))
 
 
 class BearerAuthMiddleware:
     def __init__(self, app: ASGIApp, token: str | None):
         self.app = app
-        self.token = token
+        self.token = _normalize_token(token)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send):
         if scope["type"] == "http" and self.token:
             request = Request(scope)
             auth = request.headers.get("authorization", "")
-            if not auth.startswith("Bearer ") or auth[7:] != self.token:
+            incoming_token = auth[7:].strip() if auth.startswith("Bearer ") else ""
+            if incoming_token != self.token:
                 response = JSONResponse(
                     {"error": "Unauthorized"}, status_code=401
                 )

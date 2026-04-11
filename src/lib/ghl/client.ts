@@ -16,8 +16,8 @@ class GHLClient {
   private locationId: string;
 
   constructor() {
-    const apiKey = process.env.GHL_API_KEY;
-    const locationId = process.env.GHL_LOCATION_ID;
+    const apiKey = process.env.GHL_API_KEY?.trim();
+    const locationId = process.env.GHL_LOCATION_ID?.trim();
     if (!apiKey) throw new Error("GHL_API_KEY environment variable is required");
     if (!locationId)
       throw new Error("GHL_LOCATION_ID environment variable is required");
