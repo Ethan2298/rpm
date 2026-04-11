@@ -21,7 +21,7 @@ Dealer (browser) <-> Next.js App <-> Claude API (Marcus) <-> GHL API
 
 | Layer | Choice |
 |---|---|
-| Framework | Next.js 15 (App Router) |
+| Framework | Next.js 16 (App Router) |
 | AI/Streaming | Vercel AI SDK + @ai-sdk/anthropic |
 | Styling | Tailwind CSS v4 |
 | Components | shadcn/ui |
