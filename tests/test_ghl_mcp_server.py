@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pytest
 
+from mcp_servers.ghl.telemetry import MemoryEventStore
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -551,6 +553,71 @@ def test_auth_errors_use_shared_error_envelope(monkeypatch, server_module):
             "resolution": "Enable the contacts.write scope on the GHL Private Integration token.",
         },
     }
+
+
+# ---------------------------------------------------------------------------
+# Telemetry integration tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def telemetry_store(server_module):
+    original_store = server_module.mcp.event_store
+    store = MemoryEventStore()
+    server_module.mcp.event_store = store
+    yield store
+    server_module.mcp.event_store = original_store
+
+
+def test_search_contacts_emits_telemetry_event(monkeypatch, server_module, telemetry_store):
+    async def fake_get(path, params=None):
+        assert path == "/contacts/"
+        return {
+            "contacts": [
+                {
+                    "id": "contact-1",
+                    "contactName": "Ethan Smith",
+                    "firstName": "Ethan",
+                    "lastName": "Smith",
+                    "phone": "+15551234567",
+                    "email": "ethan@example.com",
+                    "tags": ["VIP"],
+                    "source": "website",
+                    "dateAdded": "2026-04-11T12:00:00Z",
+                }
+            ],
+            "meta": {"total": 1},
+        }
+
+    monkeypatch.setattr(server_module.client, "get", fake_get)
+
+    result = parse_json(asyncio.run(server_module.search_contacts(query="Ethan", limit=5)))
+    data = get_data(result)
+
+    assert data["total"] == 1
+    assert len(telemetry_store.events) == 1
+    event = telemetry_store.events[0]
+    assert event.tool_name == "search_contacts"
+    assert event.success is True
+    assert event.payload_summary["arguments"]["query"] == "Ethan"
+
+
+def test_failed_upstream_call_still_records_telemetry(monkeypatch, server_module, telemetry_store):
+    async def fake_post(path, json=None, params=None):
+        raise server_module.GHLAPIError(403, "The token is not authorized for this scope")
+
+    monkeypatch.setattr(server_module.client, "post", fake_post)
+
+    result = parse_json(asyncio.run(server_module.send_message("conv-1", "SMS", "Hello")))
+    error = get_error(result)
+
+    assert error["status_code"] == 403
+    assert len(telemetry_store.events) == 1
+    event = telemetry_store.events[0]
+    assert event.tool_name == "send_message"
+    assert event.success is False
+    assert event.upstream_status == 403
+    assert event.scope_required == "conversations/message.write"
 
 
 # ---------------------------------------------------------------------------

@@ -5,13 +5,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from mcp.server.fastmcp import FastMCP
-
 from mcp_servers.ghl.client import GHLAPIError, GHLClient
+from mcp_servers.ghl.telemetry import create_instrumented_mcp
 
 KB_DIR = Path(__file__).parent / "knowledge_base"
 
-mcp = FastMCP(
+mcp = create_instrumented_mcp(
     "GoHighLevel CRM",
     instructions="MCP server for GoHighLevel CRM - contacts, conversations, pipelines, opportunities, calendars, tasks, notes, and team management for Mikalyzed Auto Boutique. NOTE: Some write scopes are not yet enabled on the PIT token. If a tool returns a 403 with a required_scope hint, silently note it and move on — do NOT repeatedly warn the user or suggest they enable scopes. They already know and will enable them when ready.",
 )
@@ -23,6 +22,20 @@ def get_client() -> GHLClient:
     if _client is None:
         _client = GHLClient()
     return _client
+
+
+class _ClientProxy:
+    def __getattr__(self, name: str) -> Any:
+        return getattr(get_client(), name)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name.startswith("_"):
+            object.__setattr__(self, name, value)
+            return
+        setattr(get_client(), name, value)
+
+
+client = _ClientProxy()
 
 VALID_OPPORTUNITY_STATUSES = {"open", "won", "lost", "abandoned", "all"}
 VALID_WRITE_OPPORTUNITY_STATUSES = VALID_OPPORTUNITY_STATUSES - {"all"}
