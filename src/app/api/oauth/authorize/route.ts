@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { OAUTH_CLIENT_ID, JIMMY_PIN } from "@/lib/oauth/config";
-import { generateCode, timingSafeCompare } from "@/lib/oauth/hmac";
+import { generateCode, timingSafeCompare, verifyClientId } from "@/lib/oauth/hmac";
 
 export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
@@ -18,7 +18,11 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  if (!clientId || !timingSafeCompare(clientId, OAUTH_CLIENT_ID)) {
+  const validClient =
+    clientId &&
+    (verifyClientId(clientId) ||
+      (OAUTH_CLIENT_ID && timingSafeCompare(clientId, OAUTH_CLIENT_ID)));
+  if (!validClient) {
     return NextResponse.json({ error: "invalid_client" }, { status: 400 });
   }
 

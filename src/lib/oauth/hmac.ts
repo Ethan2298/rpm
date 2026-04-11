@@ -1,4 +1,4 @@
-import { createHmac, createHash, timingSafeEqual } from "crypto";
+import { createHmac, createHash, randomBytes, timingSafeEqual } from "crypto";
 import { OAUTH_HMAC_SECRET, CODE_EXPIRY_MS } from "./config";
 
 export function generateCode(codeChallenge?: string): string {
@@ -70,4 +70,27 @@ export function timingSafeCompare(a: string, b: string): boolean {
   const bufB = Buffer.from(b);
   if (bufA.length !== bufB.length) return false;
   return timingSafeEqual(bufA, bufB);
+}
+
+export function generateClientId(): string {
+  const nonce = randomBytes(16).toString("hex");
+  const sig = createHmac("sha256", OAUTH_HMAC_SECRET)
+    .update(nonce)
+    .digest("hex")
+    .slice(0, 16);
+  return `jimmy_${nonce}.${sig}`;
+}
+
+export function verifyClientId(clientId: string): boolean {
+  if (!clientId.startsWith("jimmy_")) return false;
+  const rest = clientId.slice(6);
+  const dotIndex = rest.lastIndexOf(".");
+  if (dotIndex === -1) return false;
+  const nonce = rest.slice(0, dotIndex);
+  const sig = rest.slice(dotIndex + 1);
+  const expected = createHmac("sha256", OAUTH_HMAC_SECRET)
+    .update(nonce)
+    .digest("hex")
+    .slice(0, 16);
+  return timingSafeCompare(sig, expected);
 }
