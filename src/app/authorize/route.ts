@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { OAUTH_CLIENT_ID } from "@/lib/oauth/config";
 import { timingSafeCompare } from "@/lib/oauth/hmac";
 
 export async function GET(request: NextRequest) {

@@ -31,6 +31,23 @@ export async function POST(request: NextRequest) {
     codeVerifier = body.code_verifier;
   }
 
+  // Client credentials grant — server-to-server auth (e.g. Claude.ai connector)
+  if (grantType === "client_credentials") {
+    if (
+      !clientId ||
+      !clientSecret ||
+      !timingSafeCompare(clientSecret, OAUTH_CLIENT_SECRET)
+    ) {
+      return NextResponse.json({ error: "invalid_client" }, { status: 401 });
+    }
+
+    return NextResponse.json({
+      access_token: MCP_AUTH_TOKEN,
+      token_type: "bearer",
+      expires_in: 31536000,
+    });
+  }
+
   if (grantType !== "authorization_code") {
     return NextResponse.json(
       { error: "unsupported_grant_type" },
