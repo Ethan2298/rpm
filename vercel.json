@@ -9,7 +9,7 @@
   "crons": [
     {
       "path": "/api/smoke-test",
-      "schedule": "17 */4 * * *"
+      "schedule": "0 12 * * *"
     }
   ]
 }
