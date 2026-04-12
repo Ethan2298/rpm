@@ -573,6 +573,139 @@ def format_trace_not_found(request_id: str, integration: str | None = None) -> s
     return "\n".join(lines)
 
 
+async def _load_local_tools() -> list[dict[str, Any]]:
+    import importlib
+    ghl_api_key = os.environ.get("GHL_API_KEY")
+    ghl_location_id = os.environ.get("GHL_LOCATION_ID")
+    os.environ.setdefault("GHL_API_KEY", "__inspect__")
+    os.environ.setdefault("GHL_LOCATION_ID", "__inspect__")
+    try:
+        module = importlib.import_module("mcp_servers.ghl.server")
+        mcp_app = getattr(module, "mcp")
+        tools = await mcp_app.list_tools()
+    finally:
+        if ghl_api_key is None:
+            os.environ.pop("GHL_API_KEY", None)
+        if ghl_location_id is None:
+            os.environ.pop("GHL_LOCATION_ID", None)
+    return [_tool_to_dict(tool) for tool in tools]
+
+
+async def _load_remote_tools(url: str, auth_token: str) -> list[dict[str, Any]]:
+    from mcp.client.streamable_http import streamable_http_client
+    from mcp.client.session import ClientSession
+
+    headers = {"Authorization": f"Bearer {auth_token}"}
+    async with streamable_http_client(url, headers=headers) as (read_stream, write_stream, _):
+        async with ClientSession(read_stream, write_stream) as session:
+            await session.initialize()
+            result = await session.list_tools()
+            return [_tool_to_dict(tool) for tool in result.tools]
+
+
+def _tool_to_dict(tool: Any) -> dict[str, Any]:
+    schema = tool.inputSchema or {}
+    props = schema.get("properties", {})
+    required = set(schema.get("required", []))
+    params = []
+    for name, prop in props.items():
+        ptype = prop.get("type", "any")
+        if "anyOf" in prop:
+            ptype = " | ".join(t.get("type", "?") for t in prop["anyOf"] if t.get("type") != "null")
+            if any(t.get("type") == "null" for t in prop["anyOf"]):
+                ptype += "?"
+        default = prop.get("default", _SENTINEL)
+        params.append({
+            "name": name,
+            "type": ptype,
+            "required": name in required,
+            "default": default if default is not _SENTINEL else None,
+            "has_default": default is not _SENTINEL,
+        })
+    description = (tool.description or "").strip()
+    first_line = description.split("\n")[0].strip() if description else ""
+    return {
+        "name": tool.name,
+        "description": first_line,
+        "full_description": description,
+        "param_count": len(params),
+        "params": params,
+    }
+
+
+_SENTINEL = object()
+
+
+def _categorize_tools(tools: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    prefixes = {
+        "contacts": ("search_contacts", "get_contact", "create_or_update_contact", "update_contact", "delete_contact", "add_contact_tags", "remove_contact_tags"),
+        "conversations": ("search_conversations", "get_conversation_messages", "send_message", "update_conversation"),
+        "opportunities": ("get_pipelines", "search_opportunities", "get_opportunity", "create_opportunity", "update_opportunity", "delete_opportunity"),
+        "calendar": ("list_calendars", "get_calendar_events", "get_calendar_free_slots", "book_appointment", "update_appointment", "delete_appointment"),
+        "notes & tasks": ("get_contact_notes", "add_contact_note", "get_contact_tasks", "create_contact_task"),
+        "location": ("get_location", "get_location_custom_fields", "get_location_tags", "get_users", "get_user"),
+        "knowledge base": ("kb_list", "kb_read", "kb_write", "kb_search", "kb_delete"),
+        "memory": ("memory_write", "memory_read", "memory_search", "memory_list", "memory_delete"),
+        "jimmy": ("jimmy_skills", "jimmy_run_skill", "jimmy_settings", "jimmy_setup", "get_dealer_context"),
+    }
+    categorized: dict[str, list[dict[str, Any]]] = {}
+    assigned = set()
+    for category, tool_names in prefixes.items():
+        matched = [t for t in tools if t["name"] in tool_names]
+        if matched:
+            categorized[category] = matched
+            assigned.update(t["name"] for t in matched)
+    uncategorized = [t for t in tools if t["name"] not in assigned]
+    if uncategorized:
+        categorized["other"] = uncategorized
+    return categorized
+
+
+def build_inspect_report(tools: list[dict[str, Any]], *, mode: str, show_schema: bool, tool_filter: str | None = None) -> dict[str, Any]:
+    if tool_filter:
+        tools = [t for t in tools if tool_filter.lower() in t["name"].lower()]
+    categories = _categorize_tools(tools)
+    read_tools = [t for t in tools if t["name"].startswith(("search_", "get_", "list_", "kb_list", "kb_read", "kb_search", "memory_read", "memory_search", "memory_list"))]
+    write_tools = [t for t in tools if t not in read_tools]
+    return {
+        "mode": mode,
+        "tool_count": len(tools),
+        "read_count": len(read_tools),
+        "write_count": len(write_tools),
+        "categories": categories,
+        "tools": tools,
+        "show_schema": show_schema,
+        "tool_filter": tool_filter,
+    }
+
+
+def format_inspect_report(report: dict[str, Any]) -> str:
+    lines = [
+        "Jimmy inspect",
+        f"- mode: {report['mode']}",
+        f"- tools: {report['tool_count']} ({report['read_count']} read, {report['write_count']} write)",
+    ]
+    if report["tool_filter"]:
+        lines.append(f"- filter: {report['tool_filter']}")
+
+    for category, tools in report["categories"].items():
+        lines.append(f"\n  [{category}] ({len(tools)} tools)")
+        for tool in tools:
+            param_summary = ", ".join(
+                f"{'*' if p['required'] else ''}{p['name']}:{p['type']}" for p in tool["params"]
+            )
+            lines.append(f"    {tool['name']}({param_summary})")
+            if tool["description"]:
+                lines.append(f"      {tool['description']}")
+            if report["show_schema"]:
+                for param in tool["params"]:
+                    req = "required" if param["required"] else "optional"
+                    default_str = f", default={param['default']}" if param["has_default"] else ""
+                    lines.append(f"        - {param['name']}: {param['type']} ({req}{default_str})")
+
+    return "\n".join(lines)
+
+
 def _missing_env_vars(names: tuple[str, ...]) -> list[str]:
     return [name for name in names if not os.getenv(name, "").strip()]
 
@@ -709,12 +842,31 @@ def build_parser() -> argparse.ArgumentParser:
     anomalies_parser.add_argument("--integration", type=str, default=None, help="Filter by integration category")
     anomalies_parser.add_argument("--tool", type=str, default=None, help="Filter by tool")
 
+    inspect_parser = subparsers.add_parser("inspect", help="Inspect MCP server tools and schemas")
+    inspect_parser.add_argument("--remote", type=str, default=None, metavar="URL", help="Connect to remote MCP server URL instead of local")
+    inspect_parser.add_argument("--token", type=str, default=None, help="Auth token for remote server (or set MCP_AUTH_TOKEN)")
+    inspect_parser.add_argument("--schema", action="store_true", default=False, help="Show full parameter details for each tool")
+    inspect_parser.add_argument("--tool", type=str, default=None, help="Filter tools by name substring")
+
     return parser
 
 
 async def run_command(args: argparse.Namespace, *, store: MCPEventStore | None = None) -> str:
     resolved_store = store or create_event_store_from_env()
     store_configured = getattr(resolved_store, "enabled", True)
+
+    if args.command == "inspect":
+        if args.remote:
+            token = args.token or os.getenv("MCP_AUTH_TOKEN", "").strip()
+            if not token:
+                raise RuntimeError("Auth token required for remote inspect. Use --token or set MCP_AUTH_TOKEN.")
+            tools = await _load_remote_tools(args.remote, token)
+            mode = f"remote ({args.remote})"
+        else:
+            tools = await _load_local_tools()
+            mode = "local"
+        report = build_inspect_report(tools, mode=mode, show_schema=args.schema, tool_filter=args.tool)
+        return format_inspect_report(report)
 
     if args.command == "health":
         results = [

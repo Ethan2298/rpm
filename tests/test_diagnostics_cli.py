@@ -16,6 +16,7 @@ from diagnostics.cli import (
     HealthCheckResult,
     build_anomalies_report,
     build_failures_report,
+    build_inspect_report,
     build_latency_report,
     build_parser,
     build_reliability_report,
@@ -25,6 +26,7 @@ from diagnostics.cli import (
     build_usage_report,
     format_anomalies_report,
     format_failures_report,
+    format_inspect_report,
     format_latency_report,
     format_reliability_report,
     format_session_report,
@@ -33,6 +35,8 @@ from diagnostics.cli import (
     format_usage_report,
     main,
     run_command,
+    _tool_to_dict,
+    _categorize_tools,
 )
 from diagnostics.telemetry import MCPEvent, MemoryEventStore
 
@@ -621,3 +625,152 @@ def test_anomalies_command_via_run_command():
     )
 
     assert "Jimmy anomalies" in output
+
+
+# --- inspect command ---
+
+
+def _make_fake_tool(name, description="A tool", params=None):
+    """Build a tool dict matching _tool_to_dict output."""
+    params = params or []
+    return {
+        "name": name,
+        "description": description,
+        "full_description": description,
+        "param_count": len(params),
+        "params": params,
+    }
+
+
+def test_inspect_report_counts_tools():
+    tools = [
+        _make_fake_tool("search_contacts"),
+        _make_fake_tool("get_contact"),
+        _make_fake_tool("send_message"),
+    ]
+
+    report = build_inspect_report(tools, mode="local", show_schema=False)
+
+    assert report["tool_count"] == 3
+    assert report["mode"] == "local"
+    assert "contacts" in report["categories"]
+    assert "conversations" in report["categories"]
+
+
+def test_inspect_report_classifies_read_write():
+    tools = [
+        _make_fake_tool("search_contacts"),
+        _make_fake_tool("get_contact"),
+        _make_fake_tool("send_message"),
+        _make_fake_tool("create_opportunity"),
+    ]
+
+    report = build_inspect_report(tools, mode="local", show_schema=False)
+
+    assert report["read_count"] == 2
+    assert report["write_count"] == 2
+
+
+def test_inspect_report_filters_by_tool_name():
+    tools = [
+        _make_fake_tool("search_contacts"),
+        _make_fake_tool("get_contact"),
+        _make_fake_tool("send_message"),
+    ]
+
+    report = build_inspect_report(tools, mode="local", show_schema=False, tool_filter="contact")
+
+    assert report["tool_count"] == 2
+    assert report["tool_filter"] == "contact"
+
+
+def test_inspect_format_shows_categories():
+    tools = [
+        _make_fake_tool("search_contacts"),
+        _make_fake_tool("kb_list"),
+    ]
+
+    output = format_inspect_report(build_inspect_report(tools, mode="local", show_schema=False))
+
+    assert "Jimmy inspect" in output
+    assert "[contacts]" in output
+    assert "[knowledge base]" in output
+
+
+def test_inspect_format_shows_schema_details():
+    tools = [
+        {
+            "name": "search_contacts",
+            "description": "Search contacts",
+            "full_description": "Search contacts",
+            "param_count": 2,
+            "params": [
+                {"name": "query", "type": "string", "required": True, "default": None, "has_default": False},
+                {"name": "limit", "type": "integer", "required": False, "default": 20, "has_default": True},
+            ],
+        }
+    ]
+
+    output = format_inspect_report(build_inspect_report(tools, mode="local", show_schema=True))
+
+    assert "query: string (required)" in output
+    assert "limit: integer (optional, default=20)" in output
+
+
+def test_inspect_categorize_puts_unknown_in_other():
+    tools = [_make_fake_tool("custom_widget")]
+
+    categories = _categorize_tools(tools)
+
+    assert "other" in categories
+    assert categories["other"][0]["name"] == "custom_widget"
+
+
+def test_tool_to_dict_parses_mcp_tool():
+    class FakeTool:
+        name = "search_contacts"
+        description = "Search contacts.\n\nMore detail here."
+        inputSchema = {
+            "properties": {
+                "query": {"type": "string", "title": "Query"},
+                "limit": {"type": "integer", "title": "Limit", "default": 20},
+            },
+            "required": ["query"],
+            "type": "object",
+        }
+
+    result = _tool_to_dict(FakeTool())
+
+    assert result["name"] == "search_contacts"
+    assert result["description"] == "Search contacts."
+    assert result["param_count"] == 2
+    assert result["params"][0]["name"] == "query"
+    assert result["params"][0]["required"] is True
+    assert result["params"][1]["name"] == "limit"
+    assert result["params"][1]["required"] is False
+    assert result["params"][1]["default"] == 20
+
+
+def test_inspect_command_local_via_run_command(monkeypatch):
+    fake_tools = [
+        {
+            "name": "search_contacts",
+            "description": "Search contacts",
+            "full_description": "Search contacts",
+            "param_count": 1,
+            "params": [{"name": "query", "type": "string", "required": True, "default": None, "has_default": False}],
+        }
+    ]
+
+    async def fake_load_local():
+        return fake_tools
+
+    monkeypatch.setattr(cli_module, "_load_local_tools", fake_load_local)
+
+    output = asyncio.run(
+        run_command(Namespace(command="inspect", remote=None, token=None, schema=False, tool=None))
+    )
+
+    assert "Jimmy inspect" in output
+    assert "mode: local" in output
+    assert "search_contacts" in output
