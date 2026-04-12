@@ -11,7 +11,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from mcp_servers.ghl.telemetry import MCPEvent, MCPEventQuery, MemoryEventStore, SupabaseEventStore, create_instrumented_mcp, summarize_value
+from diagnostics.telemetry import MCPEvent, MCPEventQuery, MemoryEventStore, SupabaseEventStore, create_instrumented_mcp, summarize_value
 
 
 def test_summarize_value_redacts_sensitive_fields():
@@ -203,7 +203,7 @@ def test_supabase_event_store_includes_request_id_and_integration_filters(monkey
             captured["params"] = params
             return FakeResponse()
 
-    monkeypatch.setattr("mcp_servers.ghl.telemetry.httpx.AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr("diagnostics.telemetry.httpx.AsyncClient", FakeAsyncClient)
 
     store = SupabaseEventStore("https://example.supabase.co", "service-role", table="mcp_events")
     asyncio.run(

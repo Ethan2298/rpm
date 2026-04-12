@@ -13,7 +13,7 @@ from typing import Any
 import httpx
 
 from mcp_servers.ghl.client import GHLAPIError, GHLClient
-from mcp_servers.ghl.telemetry import (
+from diagnostics.telemetry import (
     MCPEvent,
     MCPEventQuery,
     MCPEventStore,
@@ -132,7 +132,7 @@ def build_status_report(events: list[MCPEvent], *, store_configured: bool, windo
 
 def format_status_report(report: dict[str, Any]) -> str:
     lines = [
-        "MCP status",
+        "Jimmy status",
         f"- event store: {'configured' if report['store_configured'] else 'not configured'}",
         f"- window: {report['window_days']}d",
     ]
@@ -174,7 +174,7 @@ def build_failures_report(events: list[MCPEvent], *, limit: int, integration: st
 
 def format_failures_report(report: dict[str, Any]) -> str:
     lines = [
-        "MCP failures",
+        "Jimmy failures",
         f"- total failures: {report['failure_count']}",
     ]
     if report["integration_filter"]:
@@ -213,7 +213,7 @@ def build_latency_report(events: list[MCPEvent], *, integration: str | None = No
 
 def format_latency_report(report: dict[str, Any]) -> str:
     lines = [
-        "MCP latency",
+        "Jimmy latency",
         f"- events: {report['event_count']}",
     ]
     if report["integration_filter"]:
@@ -257,7 +257,7 @@ def build_usage_report(events: list[MCPEvent], *, integration: str | None = None
 
 def format_usage_report(report: dict[str, Any]) -> str:
     lines = [
-        "MCP usage",
+        "Jimmy usage",
         f"- events: {report['event_count']}",
     ]
     if report["integration_filter"]:
@@ -303,7 +303,7 @@ def build_trace_report(event: MCPEvent) -> dict[str, Any]:
 def format_trace_report(report: dict[str, Any]) -> str:
     payload_json = json.dumps(report["payload_summary"], indent=2, sort_keys=True)
     lines = [
-        "MCP trace",
+        "Jimmy trace",
         f"- request_id: {report['request_id']}",
         f"- timestamp: {_format_dt(report['timestamp'])}",
         f"- actor: {report['actor']}",
@@ -323,7 +323,7 @@ def format_trace_report(report: dict[str, Any]) -> str:
 
 def format_trace_not_found(request_id: str, integration: str | None = None) -> str:
     lines = [
-        "MCP trace",
+        "Jimmy trace",
         f"- request_id: {request_id}",
         "- status: not found",
     ]
@@ -338,7 +338,7 @@ def _missing_env_vars(names: tuple[str, ...]) -> list[str]:
 
 def _format_health_report(results: list[HealthCheckResult]) -> str:
     overall_healthy = all(result.healthy for result in results)
-    lines = ["MCP health"]
+    lines = ["Jimmy health"]
     for result in results:
         status = "ok" if result.healthy else "fail"
         lines.append(f"- {result.name}: {status} - {result.detail}")
@@ -423,7 +423,7 @@ async def _load_events(
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="mcp", description="MCP observability CLI")
+    parser = argparse.ArgumentParser(prog="jimmy-diag", description="Jimmy diagnostics CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     def add_common_arguments(command_parser: argparse.ArgumentParser, *, default_days: int, default_limit: int = 1000) -> None:

@@ -10,8 +10,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from mcp_servers.ghl import cli as cli_module
-from mcp_servers.ghl.cli import (
+from diagnostics import cli as cli_module
+from diagnostics.cli import (
     CLICommandError,
     HealthCheckResult,
     build_failures_report,
@@ -28,7 +28,7 @@ from mcp_servers.ghl.cli import (
     main,
     run_command,
 )
-from mcp_servers.ghl.telemetry import MCPEvent, MemoryEventStore
+from diagnostics.telemetry import MCPEvent, MemoryEventStore
 
 
 def make_event(
@@ -133,7 +133,7 @@ def test_latency_report_computes_tool_stats():
     assert report["tool_stats"]["search_contacts"]["count"] == 2
     assert report["tool_stats"]["search_contacts"]["p95_ms"] == 120
     assert report["integration_stats"]["GHL"]["count"] == 2
-    assert "MCP latency" in format_latency_report(report)
+    assert "Jimmy latency" in format_latency_report(report)
     assert "integration" in format_latency_report(report)
 
 
@@ -157,7 +157,7 @@ def test_usage_report_counts_tools_actors_and_integrations():
     assert report["tool_counts"]["search_contacts"] == 2
     assert report["actor_counts"]["agent-1"] == 2
     assert report["integration_counts"]["GHL"] == 2
-    assert "MCP usage" in format_usage_report(report)
+    assert "Jimmy usage" in format_usage_report(report)
     assert "top integrations" in format_usage_report(report)
 
 
@@ -217,8 +217,8 @@ def test_cli_commands_read_from_store():
     assert "events: 3" in status_output
     assert "failures: 1" in status_output
     assert "total failures: 1" in failures_output
-    assert "MCP latency" in latency_output
-    assert "MCP usage" in usage_output
+    assert "Jimmy latency" in latency_output
+    assert "Jimmy usage" in usage_output
 
 
 def test_integration_filter_applies_before_aggregation():
@@ -331,7 +331,7 @@ def test_health_command_reports_unhealthy_cases(monkeypatch, check_name: str, de
 
 def test_main_returns_non_zero_for_unhealthy_health(monkeypatch, capsys):
     async def fake_run_command(args, *, store=None):
-        raise CLICommandError("MCP health\n- overall: unhealthy")
+        raise CLICommandError("Jimmy health\n- overall: unhealthy")
 
     monkeypatch.setattr(cli_module, "run_command", fake_run_command)
 
@@ -344,7 +344,7 @@ def test_main_returns_non_zero_for_unhealthy_health(monkeypatch, capsys):
 
 def test_main_returns_zero_for_status(monkeypatch, capsys):
     async def fake_run_command(args, *, store=None):
-        return "MCP status\n- overall: healthy"
+        return "Jimmy status\n- overall: healthy"
 
     monkeypatch.setattr(cli_module, "run_command", fake_run_command)
 
@@ -352,4 +352,4 @@ def test_main_returns_zero_for_status(monkeypatch, capsys):
     captured = capsys.readouterr()
 
     assert exit_code == 0
-    assert "MCP status" in captured.out
+    assert "Jimmy status" in captured.out

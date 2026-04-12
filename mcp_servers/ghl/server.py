@@ -9,7 +9,7 @@ import httpx
 
 from mcp_servers.ghl.client import GHLAPIError, GHLClient
 from mcp_servers.ghl.config import GHL_LOCATION_ID
-from mcp_servers.ghl.telemetry import create_instrumented_mcp
+from diagnostics.telemetry import create_instrumented_mcp
 
 KB_DIR = Path(__file__).parent / "knowledge_base"
 SKILL_PREFIX = "skill-"

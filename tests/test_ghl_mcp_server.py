@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from mcp_servers.ghl.telemetry import MemoryEventStore
+from diagnostics.telemetry import MemoryEventStore
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
